@@ -46,6 +46,10 @@ class SaleOrder(models.Model):
                 status = 'no'
             for il in line.invoice_lines:
                 invoices.add(il.invoice_id)
+        if line.order_id.state not in ('progress', 'done'):
+            status='no'
+        if line.order_id.state == 'done':
+            status='invoiced'
         self.invoice_count = len(invoices)
         self.invoice_ids = list(invoices)
         self.invoice_status = status
