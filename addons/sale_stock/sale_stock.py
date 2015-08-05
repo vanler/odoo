@@ -58,6 +58,10 @@ class sale_order(osv.osv):
 
     def _prepare_order_line_procurement(self, cr, uid, order, line, group_id=False, context=None):
         vals = super(sale_order, self)._prepare_order_line_procurement(cr, uid, order, line, group_id=group_id, context=context)
+
+        date_planned = vals['date_planned']
+        vals['date_planned'] = (date_planned - timedelta(days=order.company_id.security_lead)).strftime(DEFAULT_SERVER_DATETIME_FORMAT)
+
         location_id = order.partner_shipping_id.property_stock_customer.id
         vals['location_id'] = location_id
         routes = line.route_id and [(4, line.route_id.id)] or []
@@ -149,11 +153,6 @@ class sale_order(osv.osv):
             if noprod and o.order_policy=='picking':
                 self.write(cr, uid, [o.id], {'order_policy': 'manual'}, context=context)
         return res
-
-    def _get_date_planned(self, cr, uid, order, line, start_date, context=None):
-        date_planned = super(sale_order, self)._get_date_planned(cr, uid, order, line, start_date, context=context)
-        date_planned = (date_planned - timedelta(days=order.company_id.security_lead)).strftime(DEFAULT_SERVER_DATETIME_FORMAT)
-        return date_planned
 
     def _prepare_procurement_group(self, cr, uid, order, context=None):
         res = super(sale_order, self)._prepare_procurement_group(cr, uid, order, context=None)

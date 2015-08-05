@@ -47,7 +47,6 @@ The Dashboard for the Sales Manager will include
         'wizard/sale_make_invoice.xml',
         'security/sale_security.xml',
         'security/ir.model.access.csv',
-        'sale_workflow.xml',
         'sale_sequence.xml',
         'sale_report.xml',
         'sale_data.xml',

@@ -59,7 +59,7 @@
                     <field name="name"/>
                     <field name="partner_id"/>
                     <field name="amount_total"/>
-                    <field name="date_confirm"/>
+                    <field name="date_order"/>
                     <field name="state"/>
                     <templates>
                         <t t-name="kanban-box">
@@ -74,7 +74,7 @@
                                 </div>
                                 <div class="row">
                                     <div class="col-xs-6 text-muted">
-                                        <span><t t-esc="record.name.value"/> <t t-esc="record.date_confirm.value"/></span>
+                                        <span><t t-esc="record.name.value"/> <t t-esc="record.date_order.value"/></span>
                                     </div>
                                     <div class="col-xs-6">
                                         <span t-attf-class="pull-right text-right label #{['draft', 'cancel'].indexOf(record.state.raw_value) > -1 ? 'label-default' : ['except_picking', 'invoice_except'].indexOf(record.state.raw_value) > -1 ? 'label-danger' : ['waiting_date', 'manual'].indexOf(record.state.raw_value) > -1 ? 'label-warning' : ['done'].indexOf(record.state.raw_value) > -1 ? 'label-success' : 'label-primary'}"><t t-esc="record.state.value"/></span>
@@ -137,7 +137,6 @@
                         <button name="action_button_confirm" states="draft" string="Confirm Sale" type="object" groups="base.group_user"/>
                         <button name="%(action_view_sale_advance_payment_inv)d" string="Create Invoice"
                             type="action" states="manual" class="oe_highlight" groups="base.group_user"/>
-                        <button name="copy_quotation" states="cancel" string="New Copy of Quotation" type="object"/>
                         <button name="cancel" states="draft,sent" string="Cancel" groups="base.group_user"/>
                         <button name="action_cancel" states="manual,progress" string="Cancel Order" type="object" groups="base.group_user"/>
                         <button name="invoice_cancel" states="invoice_except" string="Cancel Order" groups="base.group_user"/>
@@ -212,7 +211,6 @@
                                         </group>
                                         <group>
                                             <field name="tax_id" widget="many2many_tags" domain="[('type_tax_use','=','sale'),('company_id','=',parent.company_id)]"/>
-                                            <field name="th_weight"/>
                                         </group>
                                     </group>
                                     <label for="name"/>
@@ -225,7 +223,6 @@
                                 <tree string="Sales Order Lines" editable="bottom">
                                     <field name="sequence" widget="handle"/>
                                     <field name="state" invisible="1"/>
-                                    <field name="th_weight" invisible="1"/>
                                     <field name="product_id"
                                         context="{'partner_id':parent.partner_id, 'quantity':product_uom_qty, 'pricelist':parent.pricelist_id, 'uom':product_uom}"
                                         groups="base.group_user"

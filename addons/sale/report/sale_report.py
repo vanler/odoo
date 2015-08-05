@@ -12,7 +12,6 @@ class sale_report(osv.osv):
 
     _columns = {
         'date': fields.datetime('Date Order', readonly=True),  # TDE FIXME master: rename into date_order
-        'date_confirm': fields.date('Date Confirm', readonly=True),
         'product_id': fields.many2one('product.product', 'Product', readonly=True),
         'product_uom': fields.many2one('product.uom', 'Unit of Measure', readonly=True),
         'product_uom_qty': fields.float('# of Qty', readonly=True),
@@ -59,11 +58,10 @@ class sale_report(osv.osv):
                     sum(l.product_uom_qty * cr.rate * l.price_unit * (100.0-l.discount) / 100.0) as price_total,
                     count(*) as nbr,
                     s.date_order as date,
-                    s.date_confirm as date_confirm,
                     s.partner_id as partner_id,
                     s.user_id as user_id,
                     s.company_id as company_id,
-                    extract(epoch from avg(date_trunc('day',s.date_confirm)-date_trunc('day',s.create_date)))/(24*60*60)::decimal(16,2) as delay,
+                    extract(epoch from avg(date_trunc('day',s.date_order)-date_trunc('day',s.create_date)))/(24*60*60)::decimal(16,2) as delay,
                     l.state,
                     t.categ_id as categ_id,
                     s.pricelist_id as pricelist_id,
@@ -100,7 +98,6 @@ class sale_report(osv.osv):
                     t.uom_id,
                     t.categ_id,
                     s.date_order,
-                    s.date_confirm,
                     s.partner_id,
                     s.user_id,
                     s.company_id,
