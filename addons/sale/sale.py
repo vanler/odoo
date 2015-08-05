@@ -17,7 +17,7 @@ class res_company(models.Model):
     _inherit = "res.company"
     sale_note = fields.Text(string='Default Terms and Conditions', translate=True)
 
-class SaleOrder(osv.osv):
+class SaleOrder(models.Model):
     _name = "sale.order"
     _inherit = ['mail.thread', 'ir.needaction_mixin']
     _description = "Sales Order"
@@ -35,7 +35,7 @@ class SaleOrder(osv.osv):
         self.amount_total = self.amount_untaxed + self.amount_tax
 
     @api.one
-    @api.depends('order_line.qty_to_invoice', 'line.product_uom_qty', 'line.invoice_lines')
+    @api.depends('order_line.qty_to_invoice', 'order_line.product_uom_qty', 'order_line.invoice_lines')
     def _get_invoiced(self, cr, uid, ids, field_name, arg, context=None):
         invoices = set()
         status = 'invoiced'
@@ -60,7 +60,7 @@ class SaleOrder(osv.osv):
     def _default_partner_invoice_id(self):
         if not self._context.get('partner_id', False):
             return False
-        return self.env['res.partner'].address_get(self._context['partner_id'], ['invoice'])['invoice'] or \
+        return self.env['res.partner'].address_get(self._context['partner_id'], ['invoice'])['invoice'] or False
 
     @api.model
     def _default_note(self):
@@ -74,7 +74,7 @@ class SaleOrder(osv.osv):
     def _default_team_id(self):
         return self.env['crm.team']._get_default_team_id()
 
-    name = fields.Char(string='Order Reference', required=True, copy=False, readonly=True, select=True,
+    name = fields.Char(string='Order Reference', required=True, copy=False, readonly=True, index=True,
         default=lambda self: self.env['ir.sequence'].next_by_code('sale.order') or '/')
     origin = fields.Char(string='Source Document', help="Reference of the document that generated this sales order request.")
     client_order_ref = fields.Char(string='Customer Reference', copy=False)
@@ -85,13 +85,13 @@ class SaleOrder(osv.osv):
             ('done', 'Sales Done'),
             ('cancel', 'Cancelled'),
         ], string='Status', readonly=True, copy=False, 
-        select=True, default='draft')
-    date_order = fields.Datetime(string='Date', required=True, readonly=True, select=True, states={'draft': [('readonly', False)], 'sent': [('readonly', False)]}, copy=False, default='_default_date')
+        index=True, default='draft')
+    date_order = fields.Datetime(string='Date', required=True, readonly=True, index=True, states={'draft': [('readonly', False)], 'sent': [('readonly', False)]}, copy=False, default='_default_date')
     validity_date = fields.Date(string='Expiration Date', readonly=True, states={'draft': [('readonly', False)], 'sent': [('readonly', False)]})
-    create_date = fields.Datetime(string='Creation Date', readonly=True, select=True, help="Date on which sales order is created.")
-    user_id = fields.Many2one('res.users', string='Salesperson', states={'draft': [('readonly', False)], 'sent': [('readonly', False)]}, select=True, track_visibility='onchange'
+    create_date = fields.Datetime(string='Creation Date', readonly=True, index=True, help="Date on which sales order is created.")
+    user_id = fields.Many2one('res.users', string='Salesperson', states={'draft': [('readonly', False)], 'sent': [('readonly', False)]}, index=True, track_visibility='onchange',
         default=lambda self: self.env.user)
-    partner_id = fields.Many2one('res.partner', string='Customer', readonly=True, states={'draft': [('readonly', False)], 'sent': [('readonly', False)]}, required=True, change_default=True, select=True, track_visibility='always')
+    partner_id = fields.Many2one('res.partner', string='Customer', readonly=True, states={'draft': [('readonly', False)], 'sent': [('readonly', False)]}, required=True, change_default=True, index=True, track_visibility='always')
     partner_invoice_id = fields.Many2one('res.partner', string='Invoice Address', readonly=True, required=True, states={'draft': [('readonly', False)], 'sent': [('readonly', False)]}, help="Invoice address for current sales order.", default='_default_partner_invoice_id')
     partner_shipping_id = fields.Many2one('res.partner', string='Delivery Address', readonly=True, required=True, states={'draft': [('readonly', False)], 'sent': [('readonly', False)]}, help="Delivery address for current sales order.", default='_default_partner_shipping_id')
 
@@ -113,19 +113,19 @@ class SaleOrder(osv.osv):
             ('to invoice', 'To Invoice'),
             ('no', 'Nothing to Invoice')
          ], string='Invoice Status', compute='_get_invoiced',
-         store=True, readonly=True, default='no'),
+         store=True, readonly=True, default='no')
 
     note = fields.Text('Terms and conditions', default='_default_note')
 
     amount_untaxed = fields.Monetary(string='Untaxed Amount',
         store=True, readonly=True, compute='_amount_all',
-        track_visibility='always'),
+        track_visibility='always')
     amount_tax = fields.Monetary(string='Taxes',
         store=True, readonly=True, compute='_amount_all',
-        track_visibility='always'),
+        track_visibility='always')
     amount_total = fields.Monetary(string='Total',
         store=True, readonly=True, compute='_amount_all',
-        track_visibility='always'),
+        track_visibility='always')
 
     payment_term_id = fields.Many2one('account.payment.term', string='Payment Term', oldname='payment_term')
     fiscal_position_id = fields.Many2one('account.fiscal.position', oldname='fiscal_position', string='Fiscal Position')
@@ -397,7 +397,7 @@ class SaleOrder(osv.osv):
         return True
 
 
-class SaleOrderLine(osv.osv):
+class SaleOrderLine(models.Model):
     _name = 'sale.order.line'
     _description = 'Sales Order Line'
     _order = 'order_id desc, sequence, id'
@@ -417,7 +417,7 @@ class SaleOrderLine(osv.osv):
         self.qty_delivered = self.qty_delivered_manual
 
     @api.one
-    @api.depends('order_id.invoice_policy', 'line.qty_invoiced', 'line.qty_delivered', 'line.product_uom_qty')
+    @api.depends('order_id.invoice_policy', 'qty_invoiced', 'qty_delivered', 'product_uom_qty')
     def _get_to_invoice_qty(self, cr, uid, ids, field_name, args, context=None):
         if self.order_id.invoice_policy == 'order':
             self.qty_to_invoice = self.qty_delivered - self.qty_invoiced
@@ -439,7 +439,7 @@ class SaleOrderLine(osv.osv):
         self.price_reduce = line.price_subtotal / line.product_uom_qty
 
 
-    order_id = fields.Many2one('sale.order', string='Order Reference', required=True, ondelete='cascade', select=True, readonly=True)
+    order_id = fields.Many2one('sale.order', string='Order Reference', required=True, ondelete='cascade', index=True, readonly=True)
     name = fields.Text(string='Description', required=True, readonly=True)
     sequence = fields.Integer(string='Sequence', default=10)
 
@@ -463,18 +463,18 @@ class SaleOrderLine(osv.osv):
         required=True, readonly=True, states={'draft': [('readonly', False)]}, default=1.0)
     product_uom = fields.Many2one('product.uom', string='Unit of Measure ', required=True, readonly=True, states={'draft': [('readonly', False)]})
 
-    qty_delivered_manual = fields.Float(string='Delivered Qty', digits_compute= dp.get_precision('Product UoS')
-            help="Delivered quantity for fields where it's set manually", default=0.0),
-    qty_delivered = fields.Float(compute='_get_delivery_qty', string='Delivered Qty',
-            digits_compute=dp.get_precision('Product UoS'), default=0.0)
+    qty_delivered_manual = fields.Float(string='Delivered Qty', digits_compute= dp.get_precision('Product UoS'),
+            help="Delivered quantity for fields where it's set manually", default=0.0)
+    qty_delivered = fields.Float(compute='_get_delivered_qty', string='Delivered Qty',
+            digits_compute=dp.get_precision('Product UoS'), default=0.0, store=True, readonly=True)
     qty_to_invoice = fields.Float(
-        compute='_get_to_invoice_qty', string='Qty To Invoice',
+        compute='_get_to_invoice_qty', string='Qty To Invoice', store=True, readonly=True,
         digits_compute=dp.get_precision('Product UoS'), default=0.0)
-    qty_invoiced = fields.Float(compute='_get_invoice_qty', string='Invoiced Qty',
+    qty_invoiced = fields.Float(compute='_get_invoice_qty', string='Invoiced Qty', store=True, readonly=True,
         digits_compute=dp.get_precision('Product UoS'), default=0.0)
 
-        # TODO: remove this, quantities is the only stuff that matters
     salesman_id=fields.Many2one(related='order_id.user_id', store=True, string='Salesperson')
+    currency_id=fields.Many2one(related='order_id.currency_id', store=True, string='Currency')
     company_id= fields.Many2one(related='order_id.company_id', string='Company', store=True, readonly=True)
     order_partner_id= fields.Many2one(related='order_id.partner_id', store=True, string='Customer')
 
@@ -597,7 +597,7 @@ class MailComposeMessage(models.Model):
 
 class AccountInvoice(models.Model):
     _inherit = 'account.invoice'
-    team_id = fields.Many2one('crm.team', string='Sales Team', default='_default_team_id'),
+    team_id = fields.Many2one('crm.team', string='Sales Team', default='_default_team_id')
 
     @api.model
     def _default_team_id(self):
@@ -617,54 +617,53 @@ class AccountInvoice(models.Model):
             sale.message_post(body=_("Invoice %s paid") % (name,), context=context)
         return res
 
-class account_invoice_line(osv.Model):
+class AccountInvoiceLine(models.Model):
     _inherit = 'account.invoice.line'
-    _columns= {
-        'sale_line_ids': fields.many2many('sale.order.line', 'sale_order_line_invoice_rel', 'invoice_id', 'order_line_id',
-                                          'Sale Order Lines', readonly=True, copy=False)
-    }
+    sale_line_ids = fields.Many2many('sale.order.line', 'sale_order_line_invoice_rel', 'invoice_id', 'order_line_id',
+          string='Sale Order Lines', readonly=True, copy=False)
 
-class procurement_order(osv.osv):
+class ProcurementOrder(models.Model):
     _inherit = 'procurement.order'
-    _columns = {
-        'sale_line_id': fields.many2one('sale.order.line', string='Sale Order Line'),
-    }
+    sale_line_id = fields.Many2one('sale.order.line', string='Sale Order Line')
 
-class product_product(osv.Model):
+class ProductProduct(models.Model):
     _inherit = 'product.product'
 
-    def _sales_count(self, cr, uid, ids, field_name, arg, context=None):
-        r = dict.fromkeys(ids, 0)
+    @api.multi
+    def _sales_count(self):
+        todo = [product.id for product in self]
+        r = {}
         domain = [
             ('state', 'in', ['confirmed', 'done']),
             ('product_id', 'in', ids),
         ]
-        for group in self.pool['sale.report'].read_group(cr, uid, domain, ['product_id', 'product_uom_qty'], ['product_id'], context=context):
+        for group in self.env['sale.report'].read_group(domain, ['product_id', 'product_uom_qty'], ['product_id']):
             r[group['product_id'][0]] = group['product_uom_qty']
+        for product in self:
+            product.sales_count = r.get(product.id, 0)
         return r
 
     # TODO: can we remove that?
-    def action_view_sales(self, cr, uid, ids, context=None):
+    @api.model
+    def action_view_sales(self, ids):
         result = self.pool['ir.model.data'].xmlid_to_res_id(cr, uid, 'sale.action_order_line_product_tree', raise_if_not_found=True)
         result = self.pool['ir.actions.act_window'].read(cr, uid, [result], context=context)[0]
         result['domain'] = "[('product_id','in',[" + ','.join(map(str, ids)) + "])]"
         return result
 
-    _columns = {
-        'sales_count': fields.function(_sales_count, string='# Sales', type='integer'),
-    }
+    sales_count = fields.Integer(compute='_sales_count', string='# Sales')
 
-class product_template(osv.Model):
+class product_template(models.Model):
     _inherit = 'product.template'
 
-    def _sales_count(self, cr, uid, ids, field_name, arg, context=None):
-        res = dict.fromkeys(ids, 0)
-        for template in self.browse(cr, uid, ids, context=context):
-            res[template.id] = sum([p.sales_count for p in template.product_variant_ids])
-        return res
+    @api.one
+    @api.depends('product_variant_ids.sales_count')
+    def _sales_count(self):
+        self.sales_count = sum([p.sales_count for p in self.product_variant_ids])
 
-    # TODO: can we remove that?
-    def action_view_sales(self, cr, uid, ids, context=None):
+    # TODO: test that
+    @api.model
+    def action_view_sales(self, ids):
         act_obj = self.pool.get('ir.actions.act_window')
         mod_obj = self.pool.get('ir.model.data')
         product_ids = []
@@ -675,7 +674,4 @@ class product_template(osv.Model):
         result['domain'] = "[('product_id','in',[" + ','.join(map(str, product_ids)) + "])]"
         return result
 
-    _columns = {
-        'sales_count': fields.function(_sales_count, string='# Sales', type='integer'),
-
-    }
+    sales_count = fields.Integer(compute='_sales_count', string='# Sales')
