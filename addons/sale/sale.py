@@ -79,10 +79,10 @@ class SaleOrder(models.Model):
     origin = fields.Char(string='Source Document', help="Reference of the document that generated this sales order request.")
     client_order_ref = fields.Char(string='Customer Reference', copy=False)
     state = fields.Selection([
-            ('draft', 'Draft Quotation'),
+            ('draft', 'Quotation'),
             ('sent', 'Quotation Sent'),
-            ('sale', 'Sales Order'),
-            ('done', 'Sales Done'),
+            ('sale', 'Sale Order'),
+            ('done', 'Done'),
             ('cancel', 'Cancelled'),
         ], string='Status', readonly=True, copy=False, 
         index=True, default='draft')
@@ -99,7 +99,7 @@ class SaleOrder(models.Model):
     currency_id = fields.Many2one("res.currency", related='pricelist_id.currency_id', string="Currency", readonly=True, required=True)
     project_id = fields.Many2one('account.analytic.account', 'Contract / Analytic', readonly=True, states={'draft': [('readonly', False)], 'sent': [('readonly', False)]}, help="The analytic account related to a sales order.")
 
-    order_line = fields.One2many('sale.order.line', 'order_id', string='Order Lines', readonly=True, states={'draft': [('readonly', False)], 'sent': [('readonly', False)]}, copy=True)
+    order_line = fields.One2many('sale.order.line', 'order_id', string='Order Lines', states={'cancel': [('readonly', True)], 'done': [('readonly', True)]}, copy=True)
 
     invoice_policy = fields.Selection([
         ('order', 'Ordered Quantities'),
@@ -115,7 +115,7 @@ class SaleOrder(models.Model):
          ], string='Invoice Status', compute='_get_invoiced',
          store=True, readonly=True, default='no')
 
-    note = fields.Text('Terms and conditions', default='_default_note')
+    note = fields.Text('Terms and conditions', default=_default_note)
 
     amount_untaxed = fields.Monetary(string='Untaxed Amount',
         store=True, readonly=True, compute='_amount_all',
@@ -155,7 +155,7 @@ class SaleOrder(models.Model):
 
     @api.onchange('pricelist_id')
     def onchange_pricelist_id(self):
-        if (not self.pricelist_id) or not self.order_lines:
+        if (not self.pricelist_id) or not self.order_line:
             return {}
         warning = {
             'title': _('Pricelist Warning!'),
@@ -165,7 +165,7 @@ class SaleOrder(models.Model):
 
     @api.onchange('partner_shipping_id')
     def onchange_partner_shipping_id(self):
-        fiscal_position = self.env['account.fiscal.position'].get_fiscal_position(self.partner_id, self.partner_shipping_id, context=context)
+        fiscal_position = self.env['account.fiscal.position'].get_fiscal_position(self.partner_id.id, self.partner_shipping_id.id)
         if fiscal_position:
             self.fiscal_position_id = fiscal_position
         return {}
@@ -190,15 +190,16 @@ class SaleOrder(models.Model):
             self.user_id = self.partner_id.user_id
         if self.partner_id.team_id:
             self.team_id = self.partner_id.team_id
-        return True
+        return {}
 
 
     @api.onchange('fiscal_position_id')
     def onchange_fiscal_position(self):
-        if not self.fiscal_position_id: return
-        for line in order_lines:
+        if not self.fiscal_position_id: return {}
+        for line in order_line:
             taxes = self.fiscal_position_id.map_tax(line.product_id.taxes_id)
             line.tax_id = taxes
+        return {}
 
     @api.model
     def create(self, vals):
@@ -249,7 +250,7 @@ class SaleOrder(models.Model):
 
     # TODO: this probably crashes
     @api.multi
-    def action_view_invoice(self, cr, uid, ids, context=None):
+    def action_view_invoice(self):
         self.ensure_one()
         act_obj = self.env['ir.actions.act_window']
         result = self.env.ref('account.action_invoice_tree1')
@@ -258,7 +259,7 @@ class SaleOrder(models.Model):
 
         #compute the number of invoices to display
         inv_ids = []
-        for so in self.browse(cr, uid, ids, context=context):
+        for so in self:
             inv_ids += [invoice.id for invoice in so.invoice_ids]
         #choose the view_mode accordingly
         if len(inv_ids)>1:
@@ -288,10 +289,15 @@ class SaleOrder(models.Model):
 
                 line.invoice_line_create(invoices[group_key], qty)
                 number += 1
-        return number
+        return invoices.values()
 
     @api.one
-    def action_cancel(self, cr, uid, ids, context=None):
+    def action_draft(self):
+        if self.state in ('cancel', 'sent'):
+            self.state = 'draft'
+
+    @api.one
+    def action_cancel(self):
         if self.state in ('draft', 'sent'):
             self.state = 'cancel'
 
@@ -358,9 +364,9 @@ class SaleOrder(models.Model):
     def action_done(self):
         self.state = 'done'
 
-    @api.one
+    @api.model
     def _prepare_order_line_procurement(self, line, group_id=False):
-        date_planned = datetime.strptime(start_date, DEFAULT_SERVER_DATETIME_FORMAT) + timedelta(days=line.customer_lead or 0.0)
+        date_planned = datetime.strptime(self.date_order, DEFAULT_SERVER_DATETIME_FORMAT) + timedelta(days=line.customer_lead or 0.0)
         return {
             'name': line.name,
             'origin': self.name,
@@ -373,12 +379,17 @@ class SaleOrder(models.Model):
             'sale_line_id': line.id
         }
 
-    @api.one
+    @api.model
     def _prepare_procurement_group(self):
-        return {'name': order.name, 'partner_id': order.partner_shipping_id.id}
+        return {'name': self.name}
 
     @api.one
-    def action_ship_create(self):
+    def action_confirm(self):
+        self.state = 'sale'
+        self._action_ship_create()
+
+    @api.one
+    def _action_ship_create(self):
         if self.state <> 'sale': return
         proc_ids = []
         for line in self.order_line:
@@ -392,10 +403,11 @@ class SaleOrder(models.Model):
                 vals = self._prepare_procurement_group()
                 self.procurement_group_id = self.env["procurement.group"].create(vals)
 
-            vals = self._prepare_order_line_procurement(line, group_id=self.procurement_group_id)
-            proc_ids.append( self.env["procurement.procurement"].create(vals) )
+            vals = self._prepare_order_line_procurement(line, group_id=self.procurement_group_id.id)
+            result = self.env["procurement.order"].create(vals)
+            proc_ids.append( result )
 
-        procurement_obj.run(proc_ids)
+        self.env["procurement.order"].run(proc_ids)
         return True
 
 
@@ -444,49 +456,46 @@ class SaleOrderLine(models.Model):
         self.price_reduce = self.price_subtotal / self.product_uom_qty
 
 
-    order_id = fields.Many2one('sale.order', string='Order Reference', required=True, ondelete='cascade', index=True, readonly=True)
-    name = fields.Text(string='Description', required=True, readonly=True)
+    order_id = fields.Many2one('sale.order', string='Order Reference', required=True, ondelete='cascade', index=True)
+    name = fields.Text(string='Description', required=True)
     sequence = fields.Integer(string='Sequence', default=10)
 
-    invoice_lines = fields.Many2many('account.invoice.line', string='Invoice Lines', readonly=True, copy=False)
-    price_unit = fields.Float('Unit Price', required=True, digits_compute= dp.get_precision('Product Price'),
-        readonly=True, states={'draft': [('readonly', False)]}, default=0.0)
+    invoice_lines = fields.Many2many('account.invoice.line', string='Invoice Lines')
+    price_unit = fields.Float('Unit Price', required=True, digits_compute= dp.get_precision('Product Price'), default=0.0)
 
     price_subtotal = fields.Monetary(compute='_compute_amount', string='Subtotal', readonly=True, store=True)
     price_tax = fields.Monetary(compute='_compute_amount', string='Taxes', readonly=True, store=True)
     price_total = fields.Monetary(compute='_compute_amount', string='Total', readonly=True, store=True)
 
     price_reduce = fields.Monetary(compute='_get_price_reduce', string='Price Reduce', readonly=True, store=True)
-    tax_id = fields.Many2many('account.tax', string='Taxes', readonly=True, states={'draft': [('readonly', False)], 'sent': [('readonly', False)]})
+    tax_id = fields.Many2many('account.tax', string='Taxes', readonly=True)
 
     discount = fields.Float(string='Discount (%)', digits_compute= dp.get_precision('Discount'),
-        readonly=True, states={'draft': [('readonly', False)], 'sent': [('readonly', False)]},
+        readonly=True,
         default=0.0)
 
-    product_id = fields.Many2one('product.product', string='Product', domain=[('sale_ok', '=', True)], change_default=True, readonly=True, states={'draft': [('readonly', False)]}, ondelete='restrict', required=True)
+    product_id = fields.Many2one('product.product', string='Product', domain=[('sale_ok', '=', True)], change_default=True, ondelete='restrict', required=True)
     product_uom_qty = fields.Float(string='Quantity', digits_compute= dp.get_precision('Product UoS'),
-        required=True, readonly=True, states={'draft': [('readonly', False)]}, default=1.0)
-    product_uom = fields.Many2one('product.uom', string='Unit of Measure ', required=True, readonly=True, states={'draft': [('readonly', False)]})
+        required=True, default=1.0)
+    product_uom = fields.Many2one('product.uom', string='Unit of Measure ', required=True)
 
     qty_delivered_manual = fields.Float(string='Delivered Qty', digits_compute= dp.get_precision('Product UoS'),
             help="Delivered quantity for fields where it's set manually", default=0.0)
     qty_delivered = fields.Float(compute='_get_delivered_qty', string='Delivered Qty',
-            digits_compute=dp.get_precision('Product UoS'), default=0.0, store=True, readonly=True)
+            digits_compute=dp.get_precision('Product UoS'), default=0.0, store=True)
     qty_to_invoice = fields.Float(
         compute='_get_to_invoice_qty', string='Qty To Invoice', store=True, readonly=True,
         digits_compute=dp.get_precision('Product UoS'), default=0.0)
     qty_invoiced = fields.Float(compute='_get_invoice_qty', string='Invoiced Qty', store=True, readonly=True,
         digits_compute=dp.get_precision('Product UoS'), default=0.0)
 
-    salesman_id=fields.Many2one(related='order_id.user_id', store=True, string='Salesperson')
-    currency_id=fields.Many2one(related='order_id.currency_id', store=True, string='Currency')
+    salesman_id=fields.Many2one(related='order_id.user_id', store=True, string='Salesperson', readonly=True)
+    currency_id=fields.Many2one(related='order_id.currency_id', store=True, string='Currency', readonly=True)
     company_id= fields.Many2one(related='order_id.company_id', string='Company', store=True, readonly=True)
     order_partner_id= fields.Many2one(related='order_id.partner_id', store=True, string='Customer')
 
-        # TODO: can we rename into customer lead time?
     customer_lead= fields.Float('Delivery Lead Time', required=True, default=0.0,
-        help="Number of days between the order confirmation and the shipping of the products to the customer",
-        readonly=True, states={'draft': [('readonly', False)]})
+        help="Number of days between the order confirmation and the shipping of the products to the customer")
     procurement_ids= fields.One2many('procurement.order', 'sale_line_id', string='Procurements')
 
     @api.one
@@ -540,26 +549,26 @@ class SaleOrderLine(models.Model):
             return {'domain': {'product_uom': []}}
 
         domain = {'product_uom': [('category_id', '=', self.product_id.uom_id.category_id.id)]}
-        if not (self.uom_id and (self.product_id.uom_id.category_id.id == self.uom_id.category_id.id)):
-            self.uom_id = self.product_id.uom_id
+        if not (self.product_uom and (self.product_id.uom_id.category_id.id == self.product_uom.category_id.id)):
+            self.product_uom = self.product_id.uom_id
 
         product = self.product_id.with_context(
             lang = self.order_id.partner_id.lang,
             partner_id = self.order_id.partner_id.id,
             date_order = self.order_id.date_order,
-            priclist_id = self.order_id.pricelist_id.id,
-            uom = self.uom_id
+            pricelist_id = self.order_id.pricelist_id.id,
+            uom = self.product_uom.id
         )
 
-        fpos = self.fiscal_position_id or self.order_id.partner_id.property_account_position_id
+        fpos = self.order_id.fiscal_position_id or self.order_id.partner_id.property_account_position_id
         self.tax_id = fpos.map_tax(product.taxes_id)
 
-        name = product.name_get()[1]
+        name = product.name_get()[0][1]
         if product.description_sale:
             name += '\n'+product.description_sale
         self.name = name
 
-        if self.pricelist_id and self.partner_id:
+        if self.order_id.pricelist_id and self.order_id.partner_id:
             self.price_unit = product.price
         return {'domain': domain}
 
@@ -568,13 +577,13 @@ class SaleOrderLine(models.Model):
         if not self.product_uom:
             self.price_unit = 0.0
             return {}
-        if self.pricelist_id and self.partner_id:
+        if self.order_id.pricelist_id and self.order_id.partner_id:
             product = self.product_id.with_context(
                 lang = self.order_id.partner_id.lang,
                 partner_id = self.order_id.partner_id.id,
                 date_order = self.order_id.date_order,
                 priclist_id = self.order_id.pricelist_id.id,
-                uom = self.uom_id
+                uom = self.product_uom.id
             )
             self.price_unit = product.price
         return {}
@@ -618,7 +627,7 @@ class AccountInvoice(models.Model):
                         todo[sale] = invoice.name
         sale_order_obj = self.env.get('sale.order')
         for so_id,name in todo.items():
-            sale.message_post(body=_("Invoice %s paid") % (name,), context=context)
+            sale.message_post(body=_("Invoice %s paid") % (name,))
         return res
 
 class AccountInvoiceLine(models.Model):
@@ -651,7 +660,7 @@ class ProductProduct(models.Model):
     @api.model
     def action_view_sales(self, ids):
         result = self.pool['ir.model.data'].xmlid_to_res_id(cr, uid, 'sale.action_order_line_product_tree', raise_if_not_found=True)
-        result = self.pool['ir.actions.act_window'].read(cr, uid, [result], context=context)[0]
+        result = self.pool['ir.actions.act_window'].read(cr, uid, [result])[0]
         result['domain'] = "[('product_id','in',[" + ','.join(map(str, ids)) + "])]"
         return result
 
@@ -671,10 +680,10 @@ class product_template(models.Model):
         act_obj = self.pool.get('ir.actions.act_window')
         mod_obj = self.pool.get('ir.model.data')
         product_ids = []
-        for template in self.browse(cr, uid, ids, context=context):
+        for template in self.browse(ids):
             product_ids += [x.id for x in template.product_variant_ids]
         result = mod_obj.xmlid_to_res_id(cr, uid, 'sale.action_order_line_product_tree',raise_if_not_found=True)
-        result = act_obj.read(cr, uid, [result], context=context)[0]
+        result = act_obj.read([result])[0]
         result['domain'] = "[('product_id','in',[" + ','.join(map(str, product_ids)) + "])]"
         return result
 

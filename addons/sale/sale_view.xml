@@ -100,6 +100,7 @@
                     <field name="user_id"/>
                     <field name="amount_total" sum="Total Tax Included" widget="monetary"/>
                     <field name="invoice_status"/>
+                    <field name="state" invisible="1"/>
                 </tree>
             </field>
         </record>
@@ -126,19 +127,21 @@
             <field name="model">sale.order</field>
             <field name="arch" type="xml">
                 <form string="Sales Order">
-                    <header>
-                        <button name="action_button_confirm" states="sent" string="Confirm Sale" class="oe_highlight" type="object" groups="base.group_user"/>
-                        <button name="action_quotation_send" string="Send by Email" type="object" states="draft" class="oe_highlight" groups="base.group_user"/>
-                        <button name="action_quotation_send" string="Send by Email" type="object" states="sent,sale" groups="base.group_user"/>
-                        <button name="print_quotation" string="Print" type="object" states="draft" class="oe_highlight" groups="base.group_user"/>
-                        <button name="print_quotation" string="Print" type="object" states="sent,sale" groups="base.group_user"/>
-                        <button name="action_button_confirm" states="draft" string="Confirm Sale" type="object" groups="base.group_user"/>
-                        <button name="%(action_view_sale_advance_payment_inv)d" string="Create Invoice"
-                            type="action" states="sale" class="oe_highlight" groups="base.group_user"/>
-                        <button name="cancel" states="draft,sent" string="Cancel" groups="base.group_user"/>
-                        <button name="action_cancel" states="sale" string="Cancel Order" type="object" groups="base.group_user"/>
-                        <field name="state" widget="statusbar" statusbar_visible="draft,sent,sale,done" states="draft,sent,cancel"/>
-                        <field name="invoice_status" widget="statusbar" states="sale,done"/>
+                <header>
+                    <button name="action_confirm" states="sent" string="Confirm Sale" class="oe_highlight" type="object"/>
+                    <button name="action_quotation_send" string="Send by Email" type="object" states="draft" class="oe_highlight"/>
+                    <button name="action_quotation_send" string="Send by Email" type="object" states="sent,sale"/>
+                    <button name="print_quotation" string="Print" type="object" states="draft" class="oe_highlight"/>
+                    <button name="print_quotation" string="Print" type="object" states="sent,sale"/>
+
+                    <button name="action_confirm" states="draft" string="Confirm Sale" type="object"/>
+
+                    <button name="%(action_view_sale_advance_payment_inv)d" string="Create Invoice"
+                        type="action" states="sale" class="oe_highlight"/>
+
+                    <button name="action_cancel" states="draft,sent" type="object" string="Cancel"/>
+                    <button name="action_draft" states="cancel" type="object" string="Set to Quotation"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,sent,sale,done"/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
@@ -146,13 +149,11 @@
                             type="object"
                             class="oe_stat_button"
                             icon="fa-pencil-square-o"
-                            attrs="{'invisible': [('invoice_count', '=', 0)]}" groups="base.group_user">
+                            attrs="{'invisible': [('invoice_count', '=', 0)]}">
                             <field name="invoice_count" widget="statinfo" string="Invoices"/>
                         </button>
                     </div>
                     <div class="oe_title">
-                        <label string="Quotation" attrs="{'invisible': [('state', 'not in', ('draft', 'sent'))]}"/>
-                        <label string="Sales Order" attrs="{'invisible': [('state', 'in', ('draft', 'sent'))]}"/>
                         <h1>
                             <field name="name" class="oe_inline" readonly="1"/>
                         </h1>
@@ -180,7 +181,7 @@
                                         <group>
                                             <field name="product_id"
                                                 context="{'partner_id':parent.partner_id, 'quantity':product_uom_qty, 'pricelist':parent.pricelist_id, 'uom':product_uom}"
-                                                groups="base.group_user"/>
+                                               />
                                             <label for="product_uom_qty"/>
                                             <div>
                                                 <field
@@ -209,10 +210,12 @@
                                     <field name="sequence" widget="handle"/>
                                     <field name="product_id"
                                         context="{'partner_id':parent.partner_id, 'quantity':product_uom_qty, 'pricelist':parent.pricelist_id, 'uom':product_uom}"
-                                        groups="base.group_user"/>
+                                       />
                                     <field name="name"/>
                                     <field name="product_uom_qty"
                                         context="{'partner_id':parent.partner_id, 'quantity':product_uom_qty, 'pricelist':parent.pricelist_id, 'uom':product_uom}"/>
+                                    <field name="qty_delivered" invisible="not context.get('show_sale', False)"/>
+                                    <field name="qty_invoiced" invisible="not context.get('show_sale', False)"/>
                                     <field name="product_uom"
                                         groups="product.group_uom" options='{"no_open": True}'/>
                                     <field name="price_unit"/>
@@ -223,7 +226,7 @@
                                 <kanban class="o_kanban_mobile">
                                     <field name="product_id"
                                         context="{'partner_id':parent.partner_id, 'quantity':product_uom_qty, 'pricelist':parent.pricelist_id, 'uom':product_uom}"
-                                        groups="base.group_user"/>
+                                       />
                                     <field name="product_uom_qty"
                                         context="{'partner_id':parent.partner_id, 'quantity':product_uom_qty, 'pricelist':parent.pricelist_id, 'uom':product_uom}"/>
                                     <field name="product_uom"
@@ -260,12 +263,12 @@
                                 </div>
                                 <field name="amount_total" nolabel="1" class="oe_subtotal_footer_separator" widget='monetary' options="{'currency_field': 'currency_id'}"/>
                             </group>
-                            <field name="note" class="oe_inline" placeholder="An administrator can set up default Terms and conditions in your Company settings."/>
+                            <field name="note" class="oe_inline" placeholder="Setup default terms and conditions in your company settings."/>
                             <div class="oe_clear"/>
                         </page>
-                        <page string="Other Information" groups="base.group_user">
+                        <page string="Other Information">
                             <group>
-                                <group string="Sales Information" name="sales_person" groups="base.group_user">
+                                <group string="Sales Information" name="sales_person">
                                     <field name="user_id" context="{'default_groups_ref': ['base.group_user', 'base.group_partner_manager', 'account.group_account_invoice', 'base.group_sale_salesman_all_leads']}"/>
                                     <field name="team_id" options="{'no_create': True}"/>
                                     <field name="client_order_ref"/>
@@ -282,7 +285,7 @@
                     </notebook>
                 </sheet>
                 <div class="oe_chatter">
-                    <field name="message_follower_ids" widget="mail_followers" groups="base.group_user"/>
+                    <field name="message_follower_ids" widget="mail_followers"/>
                     <field name="message_ids" widget="mail_thread"/>
                 </div>
                 </form>
@@ -341,7 +344,7 @@
             <field name="view_type">form</field>
             <field name="view_mode">tree,kanban,form,calendar,pivot,graph</field>
             <field name="search_view_id" ref="view_sales_order_filter"/>
-            <field name="context">{}</field>
+            <field name="context">{'show_sale': True}</field>
             <field name="domain">[('state', 'not in', ('draft', 'sent', 'cancel'))]</field>
             <field name="help" type="html">
                 <p class="oe_view_nocontent_create">
@@ -412,38 +415,6 @@
                     <field name="product_uom" string="Unit of Measure" groups="product.group_uom"/>
                     <field name="price_subtotal" sum="Total" widget="monetary"/>
                 </tree>
-            </field>
-        </record>
-        <record id="view_order_line_form2" model="ir.ui.view">
-            <field name="name">sale.order.line.form2</field>
-            <field name="model">sale.order.line</field>
-            <field name="arch" type="xml">
-                <form string="Sales Order Lines" create="false">
-                    <sheet>
-                    <label for="order_id" class="oe_edit_only"/>
-                    <h1><field name="order_id" domain="[('state','!=','done')]"/></h1>
-                    <label for="order_partner_id" class="oe_edit_only"/>
-                    <h2><field name="order_partner_id"/></h2>
-                    <group>
-                        <group>
-                            <field name="product_id"/>
-                            <label for="product_uom_qty"/>
-                            <div>
-                                <field name="product_uom_qty" readonly="1" class="oe_inline"/>
-                                <field name="product_uom" groups="product.group_uom" class="oe_inline"/>
-                            </div>
-                        </group>
-                        <group>
-                            <field name="price_unit"/>
-                            <field name="discount" groups="sale.group_discount_per_so_line"/>
-                            <field name="price_subtotal" widget="monetary"/>
-                            <field name="company_id" groups="base.group_multi_company" readonly="1"/>
-                        </group>
-                    </group>
-                    <label for="name"/>
-                    <field name="name"/>
-                    </sheet>
-                </form>
             </field>
         </record>
 
@@ -551,6 +522,7 @@
             <field name="search_view_id" ref="sale.view_sales_order_filter"/>
             <field name="domain">[('state','not in',('draft','sent','cancel'))]</field>
             <field name="context">{
+                    'show_sale': True,
                     'search_default_team_id': [active_id],
                     'default_team_id': active_id,
                 }
@@ -572,8 +544,9 @@
             <field name="view_type">form</field>
             <field name="view_mode">tree,form,calendar,graph</field>
             <field name="search_view_id" ref="sale.view_sales_order_filter"/>
-            <field name="domain">[('state', '=', 'manual')]</field>
+            <field name="domain">[('state', '=', 'sale'),('invoice_status','=','to invoice')]</field>
             <field name="context">{
+                    'show_sale': True,
                     'search_default_team_id': [active_id],
                     'default_team_id': active_id,
                 }

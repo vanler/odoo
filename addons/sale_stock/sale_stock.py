@@ -156,7 +156,7 @@ class sale_order(osv.osv):
 
     def _prepare_procurement_group(self, cr, uid, order, context=None):
         res = super(sale_order, self)._prepare_procurement_group(cr, uid, order, context=None)
-        res.update({'move_type': order.picking_policy})
+        res.update({'move_type': order.picking_policy, 'partner_id': self.partner_shipping_id.id})
         return res
 
     def action_ship_end(self, cr, uid, ids, context=None):
