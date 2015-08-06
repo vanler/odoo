@@ -30,8 +30,8 @@ class SaleOrder(models.Model):
         for line in self.order_line:
             amount_untaxed += line.price_subtotal
             amount_tax += line.price_tax
-        self.amount_tax = self.pricelist_id.currency_id.round(amount_untaxed)
-        self.amount_untaxed = self.pricelist_id.currency_id.round(amount_tax)
+        self.amount_untaxed = self.pricelist_id.currency_id.round(amount_untaxed)
+        self.amount_tax = self.pricelist_id.currency_id.round(amount_tax)
         self.amount_total = self.amount_untaxed + self.amount_tax
 
     @api.one
@@ -211,33 +211,33 @@ class SaleOrder(models.Model):
     def button_dummy(self):
         return True
 
-    @api.one
+    @api.multi
     def _prepare_invoice(self):
         """Prepare the dict of values to create the new invoice for a
            sales order. This method may be overridden to implement custom
            invoice generation (making sure to call super() to establish
            a clean extension chain).
         """
-        context = context or {}
-        journal_ids = self.env['account.journal'].search([('type', '=', 'sale'), ('company_id', '=', self.company_id.id)], limit=1)
+        self.ensure_one()
+        order = self[0]
+        journal_ids = self.env['account.journal'].search([('type', '=', 'sale'), ('company_id', '=', order.company_id.id)], limit=1)
         if not journal_ids:
             raise UserError(_('Please define an accounting sale journal for this company.'))
         invoice_vals = {
-            'name': self.client_order_ref or '',
-            'origin': self.name,
+            'name': order.client_order_ref or '',
+            'origin': order.name,
             'type': 'out_invoice',
-            'reference': self.client_order_ref or self.name,
-            'account_id': self.partner_invoice_id.property_account_receivable_id.id,
-            'partner_id': self.partner_invoice_id.id,
-            'journal_id': journal_ids[0],
-            'currency_id': self.pricelist_id.currency_id.id,
-            'comment': self.note,
-            'payment_term_id': self.payment_term_id.id,
-            'fiscal_position_id': self.fiscal_position_id.id or self.partner_invoice_id.property_account_position_id.id,
-            'date_invoice': context.get('date_invoice', False),
-            'company_id': self.company_id.id,
-            'user_id': self.user_id and self.user_id.id or False,
-            'team_id' : self.team_id.id
+            'reference': order.client_order_ref or order.name,
+            'account_id': order.partner_invoice_id.property_account_receivable_id.id,
+            'partner_id': order.partner_invoice_id.id,
+            'journal_id': journal_ids[0].id,
+            'currency_id': order.pricelist_id.currency_id.id,
+            'comment': order.note,
+            'payment_term_id': order.payment_term_id.id,
+            'fiscal_position_id': order.fiscal_position_id.id or order.partner_invoice_id.property_account_position_id.id,
+            'company_id': order.company_id.id,
+            'user_id': order.user_id and order.user_id.id or False,
+            'team_id' : order.team_id.id
         }
         return invoice_vals
 
@@ -285,8 +285,7 @@ class SaleOrder(models.Model):
                 if group_key not in invoices:
                     inv_data = order._prepare_invoice()
                     invoice = inv_obj.create(inv_data)
-                    invoices[group_key] = invoice
-
+                    invoices[group_key] = invoice.id
                 line.invoice_line_create(invoices[group_key], qty)
                 number += 1
         return invoices.values()
@@ -421,9 +420,9 @@ class SaleOrderLine(models.Model):
     def _compute_amount(self):
         price = self.price_unit * (1 - (self.discount or 0.0) / 100.0)
         taxes = self.tax_id.compute_all(price, self.order_id.currency_id, self.product_uom_qty, product=self.product_id, partner=self.order_id.partner_id)
-        self.price_subtotal = taxes['total_excluded']
         self.price_tax = taxes['total_included'] - taxes['total_excluded']
-        self.price_total= taxes['total_included']
+        self.price_total = taxes['total_included']
+        self.price_subtotal = taxes['total_excluded']
 
     @api.one
     @api.depends('qty_delivered_manual')
@@ -446,8 +445,10 @@ class SaleOrderLine(models.Model):
     def _get_invoice_qty(self):
         qty_invoiced = 0.0
         for invoice_line in self.invoice_lines:
+            print 'ICI', invoice_line
             if invoice_line.invoice_id.state != 'cancel':
                 qty_invoiced += invoice_line.quantity
+                print '-', qty_invoiced
         self.qty_invoiced = qty_invoiced
 
     @api.one
@@ -460,7 +461,7 @@ class SaleOrderLine(models.Model):
     name = fields.Text(string='Description', required=True)
     sequence = fields.Integer(string='Sequence', default=10)
 
-    invoice_lines = fields.Many2many('account.invoice.line', string='Invoice Lines')
+    invoice_lines = fields.Many2many('account.invoice.line', 'sale_order_line_invoice_rel', 'order_line_id', 'invoice_line_id', string='Invoice Lines')
     price_unit = fields.Float('Unit Price', required=True, digits_compute= dp.get_precision('Product Price'), default=0.0)
 
     price_subtotal = fields.Monetary(compute='_compute_amount', string='Subtotal', readonly=True, store=True)
@@ -498,7 +499,7 @@ class SaleOrderLine(models.Model):
         help="Number of days between the order confirmation and the shipping of the products to the customer")
     procurement_ids= fields.One2many('procurement.order', 'sale_line_id', string='Procurements')
 
-    @api.one
+    @api.model
     def _prepare_invoice_line(self, qty):
         """Prepare the dict of values to create the new invoice line for a
            sales order line. This method may be overridden to implement custom
@@ -516,7 +517,8 @@ class SaleOrderLine(models.Model):
                     (self.product_id.name, self.product_id.id,))
 
         fpos = self.order_id.fiscal_position_id or False
-        account_id = self.order_id.fiscal_position_id.map_account(cr, uid, fpos, account_id)
+        if fpos:
+            account_id = self.order_id.fiscal_position_id.map_account(account_id)
         if not account_id:
             raise UserError(_('There is no Fiscal Position defined or Income category account defined for default properties of Product categories.'))
 
@@ -528,10 +530,10 @@ class SaleOrderLine(models.Model):
             'price_unit': self.price_unit,
             'quantity': qty,
             'discount': self.discount,
-            'uos_id': self.product_uom_id,
+            'uos_id': self.product_uom.id,
             'product_id': self.product_id.id or False,
             'invoice_line_tax_ids': self.tax_id,
-            'account_analytic_id': self.order_id.project_id,
+            'account_analytic_id': self.order_id.project_id.id,
         }
         return res
 
@@ -540,8 +542,8 @@ class SaleOrderLine(models.Model):
         if qty:
             vals = self._prepare_invoice_line(qty=qty)
             vals['invoice_id'] = invoice_id
+            vals['sale_line_ids'] = [(6, 0, [self.id])]
             inv_id = self.env['account.invoice.line'].create(vals)
-            self.write({'invoice_lines': [(4, inv_id)]})
 
     @api.onchange('product_id')
     def product_id_change(self):
@@ -600,7 +602,7 @@ class MailComposeMessage(models.Model):
 
     @api.multi
     def send_mail(self, auto_commit=False):
-        if self.context.get('default_model') == 'sale.order' and context.get('default_res_id') and context.get('mark_so_as_sent'):
+        if self._context.get('default_model') == 'sale.order' and context.get('default_res_id') and context.get('mark_so_as_sent'):
             context = dict(context, mail_post_autofollow=True)
             order = self.env['sale.order'].browse([context['default_res_id']])
             if order.state =='draft':
@@ -632,7 +634,7 @@ class AccountInvoice(models.Model):
 
 class AccountInvoiceLine(models.Model):
     _inherit = 'account.invoice.line'
-    sale_line_ids = fields.Many2many('sale.order.line', 'sale_order_line_invoice_rel', 'invoice_id', 'order_line_id',
+    sale_line_ids = fields.Many2many('sale.order.line', 'sale_order_line_invoice_rel', 'invoice_line_id', 'order_line_id',
           string='Sale Order Lines', readonly=True, copy=False)
 
 class ProcurementOrder(models.Model):
