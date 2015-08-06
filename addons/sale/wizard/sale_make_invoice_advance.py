@@ -1,52 +1,51 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
-from openerp.osv import fields, osv
+from openerp import api, fields, models, _
+
 from openerp.tools.translate import _
 import openerp.addons.decimal_precision as dp
 from openerp.exceptions import UserError
 
-class sale_advance_payment_inv(osv.osv_memory):
+class SaleAdvancePaymentInv(models.Model):
     _name = "sale.advance.payment.inv"
     _description = "Sales Advance Payment Invoice"
 
-    _columns = {
-        'advance_payment_method':fields.selection(
-            [('all', 'Invoice the whole sales order'), ('percentage','Percentage'), ('fixed','Fixed price (deposit)'),
-                ('lines', 'Some order lines')],
-            'What do you want to invoice?', required=True,
-            help="""Use Invoice the whole sale order to create the final invoice.\nUse Percentage to invoice a percentage of the total amount.\nUse Fixed Price to invoice a specific amount in advance.\nUse Some Order Lines to invoice a selection of the sales order lines."""),
-        'qtty': fields.float('Quantity', digits=(16, 2), required=True),
-        'product_id': fields.many2one('product.product', 'Advance Product',
-            domain=[('type', '=', 'service')],
-            help="Select a product of type service which is called 'Advance Product'.\nYou may have to create it and set it as a default value on this field."),
-        'amount': fields.float('Advance Amount', digits=0,
-            help="The amount to be invoiced in advance. \nTaxes are not taken into account for advance invoices."),
-    }
+    @api.model
+    def _count(self):
+        return len(self.context.get('active_ids', []))
 
-    def _get_advance_product(self, cr, uid, context=None):
+    @api.model
+    def _get_advance_payment_method(self):
+        return 'delivered'
+
+    @api.model
+    def _get_advance_product(self):
         try:
-            product = self.pool.get('ir.model.data').get_object(cr, uid, 'sale', 'advance_product_0')
+            return self.env['ir.model.data'].xmlid_to_res_id('account.' + xid, raise_if_not_found=True)
         except ValueError:
-            # a ValueError is returned if the xml id given is not found in the table ir_model_data
             return False
         return product.id
 
-    _defaults = {
-        'advance_payment_method': 'all',
-        'qtty': 1.0,
-        'product_id': _get_advance_product,
-    }
+    advance_payment_method = fields.Selection([
+            ('delivered', 'Delivered products'), 
+            ('all', 'Whole order'), 
+            ('percentage','Percentage'), 
+            ('fixed','Fixed price (deposit)')
+        ], string='What do you want to invoice?', default=_get_advance_payment_method, required=True)
+    product_id = fields.Many2one('product.product', string='Advance Product',
+        domain=[('type', '=', 'service')], default=_get_advance_product)
+    count = fields.Integer(compute=_count, string='# of Orders')
+    amount = fields.Float('Advance Amount', digits=(16,2),
+        help="The amount to be invoiced in advance, taxes excluded.")
 
-    def _translate_advance(self, cr, uid, percentage=False, context=None):
+    def _translate_advance(self):
         return _("Advance of %s %%") if percentage else _("Advance of %s %s")
 
-    def onchange_method(self, cr, uid, ids, advance_payment_method, product_id, context=None):
-        if advance_payment_method == 'percentage':
-            return {'value': {'amount':0, 'product_id':False }}
-        if product_id:
-            product = self.pool.get('product.product').browse(cr, uid, product_id, context=context)
-            return {'value': {'amount': product.list_price}}
-        return {'value': {'amount': 0}}
+    @api.onchange('advance_payment_method')
+    def onchange_method(self):
+        if self.advance_payment_method == 'percentage':
+            return {'value': {'amount':0, 'product_id':False}}
+        return {}
 
     def _prepare_advance_invoice_vals(self, cr, uid, ids, context=None):
         if context is None:
@@ -112,7 +111,7 @@ class sale_advance_payment_inv(osv.osv_memory):
                 'origin': sale.name,
                 'account_id': res['account_id'],
                 'price_unit': inv_amount,
-                'quantity': wizard.qtty or 1.0,
+                'quantity': 1.0,
                 'discount': False,
                 'uos_id': res.get('uos_id', False),
                 'product_id': wizard.product_id.id,
@@ -145,13 +144,22 @@ class sale_advance_payment_inv(osv.osv_memory):
         sale_obj.write(cr, uid, sale_id, {'invoice_ids': [(4, inv_id)]}, context=context)
         return inv_id
 
-    def create_invoices(self, cr, uid, ids, context=None):
-        """ create invoices for the active sales orders """
-        sale_obj = self.pool.get('sale.order')
+    @api.one
+    def create_invoices(self):
+        sale_obj = self.env['sale.order']
+        orders = sale_obj.browse(self.context.get('active_ids', []))
+        if self.advance_payment_method == 'delivered':
+            orders.action_invoice_create()
+            return {'type': 'ir.actions.act_window_close'}
+        elif self.advance_payment_method == 'all':
+            orders.action_invoice_create(final=True)
+            return {'type': 'ir.actions.act_window_close'}
+
+        for order in orders:
+
         act_window = self.pool.get('ir.actions.act_window')
         wizard = self.browse(cr, uid, ids[0], context)
         sale_ids = context.get('active_ids', [])
-        if wizard.advance_payment_method == 'all':
             # create the final invoices of the active sales orders
             res = sale_obj.manual_invoice(cr, uid, sale_ids, context)
             if context.get('open_invoices', False):

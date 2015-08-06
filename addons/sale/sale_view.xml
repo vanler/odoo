@@ -404,9 +404,12 @@
                     <field name="order_id"/>
                     <field name="order_partner_id"/>
                     <field name="name"/>
-                    <field name="product_uom_qty" string="Qty"/>
-                    <field name="product_uom" string="Unit of Measure" groups="product.group_uom"/>
                     <field name="salesman_id"/>
+                    <field name="product_uom_qty" string="Qty"/>
+                    <field name="qty_delivered"/>
+                    <field name="qty_invoiced"/>
+                    <field name="qty_to_invoice"/>
+                    <field name="product_uom" string="Unit of Measure" groups="product.group_uom"/>
                     <field name="price_subtotal" sum="Total" widget="monetary"/>
                 </tree>
             </field>
@@ -416,12 +419,6 @@
             <field name="model">sale.order.line</field>
             <field name="arch" type="xml">
                 <form string="Sales Order Lines" create="false">
-                    <header>
-                        <button name="%(action_view_sale_order_line_make_invoice)d" string="Create Invoice" type="action" attrs="{'invisible': [('invoice_status', '&lt;&gt;', 'to invoice')]}" class="oe_highlight" groups="base.group_user"/>
-                        <button name="button_cancel" string="Cancel Line" type="object" states="confirmed,exception" groups="base.group_user"/>
-                        <button name="button_done" string="Done" type="object"  attrs="{'invisible': ['|',('invoiced', '=', 0), ('state', 'not in', ('confirmed', 'exception'))]}" class="oe_highlight" groups="base.group_user"/>
-                        <field name="state" widget="statusbar" statusbar_visible="draft,confirmed,done" statusbar_colors='{"exception":"red","cancel":"red"}'/>
-                    </header>
                     <sheet>
                     <label for="order_id" class="oe_edit_only"/>
                     <h1><field name="order_id" domain="[('state','!=','done')]"/></h1>
@@ -440,7 +437,6 @@
                             <field name="price_unit"/>
                             <field name="discount" groups="sale.group_discount_per_so_line"/>
                             <field name="price_subtotal" widget="monetary"/>
-                            <field name="invoiced"/>
                             <field name="company_id" groups="base.group_multi_company" readonly="1"/>
                         </group>
                     </group>
@@ -456,9 +452,7 @@
             <field name="model">sale.order.line</field>
             <field name="arch" type="xml">
                 <search string="Search Sales Order">
-                    <filter string="To Invoice" domain="[('invoiced','&lt;&gt;', 1),('state','=','done')]"  help="Sales Order Lines ready to be invoiced"/>
-                    <separator/>
-                    <filter string="Confirmed" domain="[('state', 'in', ['confirmed', 'done'])]" name="confirmed"/>
+                    <filter string="To Invoice" domain="[('qty_to_invoice','&lt;&gt;', 0)]"  help="Sales Order Lines ready to be invoiced"/>
                     <separator/>
                     <filter string="My Sales Order Lines" domain="[('salesman_id','=',uid)]" help="Sales Order Lines related to a Sales Order of mine"/>
                     <field name="order_id"/>
@@ -469,72 +463,11 @@
                         <filter string="Product" domain="[]" context="{'group_by':'product_id'}"/>
                         <filter string="Order" domain="[]" context="{'group_by':'order_id'}"/>
                         <filter string="Salesperson" domain="[]" context="{'group_by':'salesman_id'}"/>
-                        <filter string="Status" domain="[]" context="{'group_by':'state'}"/>
                     </group>
                 </search>
             </field>
         </record>
 
-        <record id="view_sales_order_uninvoiced_line_filter" model="ir.ui.view">
-            <field name="name">sale.order.uninvoiced.line</field>
-            <field name="model">sale.order.line</field>
-            <field name="arch" type="xml">
-                <search string="Search Uninvoiced Lines">
-                    <filter string="To Do" domain="[('state','=','confirmed')]" name="sale order" help="Confirmed sales order lines, not yet delivered"/>
-                    <filter string="Done" domain="[('state','=','done')]" name="sale_order_done" help="Sales order lines done"/>
-                    <filter string="Shipped" domain="[('state','=','done')]" name="unshipped" help="Sales Order Lines that are in 'done' state"/>
-                    <separator/>
-                    <filter string="Uninvoiced" name="uninvoiced" domain="[('invoiced','&lt;&gt;', 1),('state','&lt;&gt;','draft'),('state','&lt;&gt;','cancel')]" help="Sales Order Lines that are confirmed, done or in exception state and haven't yet been invoiced"/>
-                    <separator/>
-                    <filter string="My Sales Order Lines" domain="[('salesman_id','=',uid)]" help="My Sales Order Lines"/>
-                    <field name="order_id"/>
-                    <field name="order_partner_id" operator="child_of"/>
-                    <field name="product_id"/>
-                    <field name="salesman_id"/>
-                    <group expand="0" string="Group By">
-                        <filter string="Order" domain="[]" context="{'group_by':'order_id'}" help="Order reference"/>
-                        <filter string="Product" domain="[]" context="{'group_by':'product_id'}"/>
-                        <filter string="Status" domain="[]" context="{'group_by':'state'}"/>
-                    </group>
-                </search>
-            </field>
-        </record>
-
-        <record id="action_order_line_tree2" model="ir.actions.act_window">
-            <field name="name">Order Lines to Invoice</field>
-            <field name="type">ir.actions.act_window</field>
-            <field name="res_model">sale.order.line</field>
-            <field name="view_type">form</field>
-            <field name="view_mode">tree</field>
-            <field name="search_view_id" ref="view_sales_order_uninvoiced_line_filter"/>
-            <field name="context">{"search_default_uninvoiced":1}</field>
-            <field name="filter" eval="True"/>
-            <field name="help" type="html">
-              <p>
-                Here is a list of each sales order line to be invoiced. You can
-                invoice sales orders partially, by lines of sales order. You do
-                not need this list if you invoice from the delivery orders or
-                if you invoice sales totally.
-              </p>
-            </field>
-        </record>
-
-        <record id="action_order_line_tree3" model="ir.actions.act_window">
-            <field name="name">Uninvoiced and Delivered Lines</field>
-            <field name="type">ir.actions.act_window</field>
-            <field name="res_model">sale.order.line</field>
-            <field name="view_type">form</field>
-            <field name="view_mode">tree,form</field>
-            <field name="domain">[('invoiced','&lt;&gt;', 1),('state','=','done')]</field>
-            <field name="filter" eval="True"/>
-        </record>
-        <record id="action_order_line_product_tree" model="ir.actions.act_window">
-            <field name="context">{}</field><!-- force empty -->
-            <field name="name">Sales Order Lines</field>
-            <field name="res_model">sale.order.line</field>
-            <field name="view_id" ref="view_order_line_tree"/>
-            <field name="context">{'search_default_confirmed': 1}</field>
-        </record>
         <record model="ir.ui.view" id="product_form_view_sale_order_button">
             <field name="name">product.product.sale.order</field>
             <field name="model">product.product</field>

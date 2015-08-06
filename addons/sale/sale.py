@@ -25,9 +25,9 @@ class SaleOrder(models.Model):
 
     @api.one
     @api.depends('order_line.product_uom_qty', 'order_line.discount', 'order_line.price_unit', 'order_line.tax_id')
-    def _amount_all(self, cr, uid, ids, field_name, arg, context=None):
+    def _amount_all(self):
         amount_untaxed = amount_tax = amount_total = 0.0
-        for line in order.order_line:
+        for line in self.order_line:
             amount_untaxed += line.price_subtotal
             amount_tax += line.price_tax
         self.amount_tax = self.pricelist_id.currency_id.round(amount_untaxed)
@@ -36,7 +36,7 @@ class SaleOrder(models.Model):
 
     @api.one
     @api.depends('order_line.qty_to_invoice', 'order_line.product_uom_qty', 'order_line.invoice_lines')
-    def _get_invoiced(self, cr, uid, ids, field_name, arg, context=None):
+    def _get_invoiced(self):
         invoices = set()
         status = 'invoiced'
         for line in self.order_line:
@@ -46,9 +46,9 @@ class SaleOrder(models.Model):
                 status = 'no'
             for il in line.invoice_lines:
                 invoices.add(il.invoice_id)
-        if line.order_id.state not in ('progress', 'done'):
+        if self.state not in ('progress', 'done'):
             status='no'
-        if line.order_id.state == 'done':
+        if self.state == 'done':
             status='invoiced'
         self.invoice_count = len(invoices)
         self.invoice_ids = list(invoices)
@@ -71,10 +71,6 @@ class SaleOrder(models.Model):
         return self.env.user.company_id.sale_note
 
     @api.model
-    def _default_date(self):
-        return fields.datetime.now
-
-    @api.model
     def _default_team_id(self):
         return self.env['crm.team']._get_default_team_id()
 
@@ -90,7 +86,7 @@ class SaleOrder(models.Model):
             ('cancel', 'Cancelled'),
         ], string='Status', readonly=True, copy=False, 
         index=True, default='draft')
-    date_order = fields.Datetime(string='Date', required=True, readonly=True, index=True, states={'draft': [('readonly', False)], 'sent': [('readonly', False)]}, copy=False, default='_default_date')
+    date_order = fields.Datetime(string='Date', required=True, readonly=True, index=True, states={'draft': [('readonly', False)], 'sent': [('readonly', False)]}, copy=False, default=fields.Date.context_today)
     validity_date = fields.Date(string='Expiration Date', readonly=True, states={'draft': [('readonly', False)], 'sent': [('readonly', False)]})
     create_date = fields.Datetime(string='Creation Date', readonly=True, index=True, help="Date on which sales order is created.")
     user_id = fields.Many2one('res.users', string='Salesperson', states={'draft': [('readonly', False)], 'sent': [('readonly', False)]}, index=True, track_visibility='onchange',
@@ -207,7 +203,7 @@ class SaleOrder(models.Model):
     @api.model
     def create(self, vals):
         result = super(SaleOrder, self).create(vals)
-        self.message_post([result], body=_("Quotation created"))
+        self.message_post(body=_("Quotation created"))
         return result
 
     @api.model
@@ -274,19 +270,23 @@ class SaleOrder(models.Model):
         return result
 
     @api.multi
-    def action_invoice_create(self, grouped=False):
+    def action_invoice_create(self, grouped=False, final=False):
         inv_obj = self.env['account.invoice']
         invoices = {}
         number= 0
         for order in self:
-            group_key = (order.partner_id.id, order.currency_id.id)
+            group_key = grouped and order.id or (order.partner_id.id, order.currency_id.id)
             for line in order.order_line:
-                if not line.qty_to_invoice: continue
+                qty = line.qty_to_invoice
+                if final:
+                    qty = line.product_uom_qty - line.qty_invoiced
+                if not qty: continue
                 if group_key not in invoices:
                     inv_data = order._prepare_invoice()
                     invoice = inv_obj.create(inv_data)
                     invoices[group_key] = invoice
-                line.invoice_line_create(invoices[group_key])
+
+                line.invoice_line_create(invoices[group_key], qty)
                 number += 1
         return number
 
@@ -368,8 +368,6 @@ class SaleOrder(models.Model):
             'product_id': line.product_id.id,
             'product_qty': line.product_uom_qty,
             'product_uom': line.product_uom.id,
-            'product_uos_qty': (line.product_uos and line.product_uos_qty) or line.product_uom_qty,
-            'product_uos': (line.product_uos and line.product_uos.id) or line.product_uom.id,
             'company_id': self.company_id.id,
             'group_id': group_id,
             'sale_line_id': line.id
@@ -410,27 +408,30 @@ class SaleOrderLine(models.Model):
     @api.depends('product_uom_qty', 'discount', 'price_unit', 'tax_id')
     def _compute_amount(self):
         price = self.price_unit * (1 - (self.discount or 0.0) / 100.0)
-        taxes = self.tax_id.compute_all(price, self.order_id.currency_id, self.quantity, product=self.product_id, partner=self.order_id.partner_id)
-        self.price_subtotal = taxes['tax_excluded']
-        self.price_tax = taxes['tax_included'] - taxes['tax_excluded']
-        self.price_total= taxes['tax_included']
+        taxes = self.tax_id.compute_all(price, self.order_id.currency_id, self.product_uom_qty, product=self.product_id, partner=self.order_id.partner_id)
+        self.price_subtotal = taxes['total_excluded']
+        self.price_tax = taxes['total_included'] - taxes['total_excluded']
+        self.price_total= taxes['total_included']
 
     @api.one
     @api.depends('qty_delivered_manual')
-    def _get_delivered_qty(self, cr, uid, ids, field_name, args, context=None):
+    def _get_delivered_qty(self):
         self.qty_delivered = self.qty_delivered_manual
 
     @api.one
     @api.depends('order_id.invoice_policy', 'qty_invoiced', 'qty_delivered', 'product_uom_qty')
-    def _get_to_invoice_qty(self, cr, uid, ids, field_name, args, context=None):
-        if self.order_id.invoice_policy == 'order':
-            self.qty_to_invoice = self.qty_delivered - self.qty_invoiced
+    def _get_to_invoice_qty(self):
+        if self.order_id.state=='sale':
+            if self.order_id.invoice_policy == 'order':
+                self.qty_to_invoice = self.qty_delivered - self.qty_invoiced
+            else:
+                self.qty_to_invoice = self.product_uom_qty - self.qty_invoiced
         else:
-            self.qty_to_invoice = self.product_uom_qty - self.qty_invoiced
+            self.qty_to_invoice = 0
 
     @api.one
     @api.depends('invoice_lines.invoice_id.state', 'invoice_lines.quantity')
-    def _get_invoice_qty(self, cr, uid, ids, field_name, args, context=None):
+    def _get_invoice_qty(self):
         qty_invoiced = 0.0
         for invoice_line in self.invoice_lines:
             if invoice_line.invoice_id.state != 'cancel':
@@ -440,7 +441,7 @@ class SaleOrderLine(models.Model):
     @api.one
     @api.depends('price_subtotal', 'product_uom_qty')
     def _get_price_reduce(self):
-        self.price_reduce = line.price_subtotal / line.product_uom_qty
+        self.price_reduce = self.price_subtotal / self.product_uom_qty
 
 
     order_id = fields.Many2one('sale.order', string='Order Reference', required=True, ondelete='cascade', index=True, readonly=True)
@@ -488,8 +489,8 @@ class SaleOrderLine(models.Model):
         readonly=True, states={'draft': [('readonly', False)]})
     procurement_ids= fields.One2many('procurement.order', 'sale_line_id', string='Procurements')
 
-    @api.model
-    def _prepare_invoice_line(self, line):
+    @api.one
+    def _prepare_invoice_line(self, qty):
         """Prepare the dict of values to create the new invoice line for a
            sales order line. This method may be overridden to implement custom
            invoice generation (making sure to call super() to establish
@@ -498,38 +499,37 @@ class SaleOrderLine(models.Model):
            :param browse_record line: sale.order.line record to invoice
         """
         res = {}
-        account_id = line.product_id.property_account_income_id.id
+        account_id = self.product_id.property_account_income_id.id
         if not account_id:
-            account_id = line.product_id.categ_id.property_account_income_categ_id.id
+            account_id = self.product_id.categ_id.property_account_income_categ_id.id
         if not account_id:
             raise UserError(_('Please define income account for this product: "%s" (id:%d).') % \
-                    (line.product_id.name, line.product_id.id,))
+                    (self.product_id.name, self.product_id.id,))
 
-        fpos = line.order_id.fiscal_position_id or False
-        account_id = line.order_id.fiscal_position_id.map_account(cr, uid, fpos, account_id)
+        fpos = self.order_id.fiscal_position_id or False
+        account_id = self.order_id.fiscal_position_id.map_account(cr, uid, fpos, account_id)
         if not account_id:
             raise UserError(_('There is no Fiscal Position defined or Income category account defined for default properties of Product categories.'))
 
         res = {
-            'name': line.name,
-            'sequence': line.sequence,
-            'origin': line.order_id.name,
+            'name': self.name,
+            'sequence': self.sequence,
+            'origin': self.order_id.name,
             'account_id': account_id,
-            'price_unit': line.price_unit,
+            'price_unit': self.price_unit,
             'quantity': qty,
-            'discount': line.discount,
-            'uos_id': line.product_uom_id,
-            'product_id': line.product_id.id or False,
-            'invoice_line_tax_ids': line.tax_id,
-            'account_analytic_id': line.order_id.project_id,
+            'discount': self.discount,
+            'uos_id': self.product_uom_id,
+            'product_id': self.product_id.id or False,
+            'invoice_line_tax_ids': self.tax_id,
+            'account_analytic_id': self.order_id.project_id,
         }
         return res
 
     @api.one
-    def invoice_line_create(invoice_id, negative=False):
-        qty = self.qty_to_invoice
-        if (qty>0) or (qty<0 and negative):
-            vals = self._prepare_invoice_line()
+    def invoice_line_create(self, invoice_id, qty):
+        if qty:
+            vals = self._prepare_invoice_line(qty=qty)
             vals['invoice_id'] = invoice_id
             inv_id = self.env['account.invoice.line'].create(vals)
             self.write({'invoice_lines': [(4, inv_id)]})
