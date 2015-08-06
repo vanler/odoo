@@ -51,7 +51,7 @@ class SaleOrder(models.Model):
         if self.state == 'done':
             status='invoiced'
         self.invoice_count = len(invoices)
-        self.invoice_ids = list(invoices)
+        self.invoice_ids = map(lambda x: x.id, invoices)
         self.invoice_status = status
 
     @api.model
@@ -454,7 +454,10 @@ class SaleOrderLine(models.Model):
     @api.one
     @api.depends('price_subtotal', 'product_uom_qty')
     def _get_price_reduce(self):
-        self.price_reduce = self.price_subtotal / self.product_uom_qty
+        if self.product_uom_qty:
+            self.price_reduce = self.price_subtotal / self.product_uom_qty
+        else:
+            self.price_reduce = 0.0
 
 
     order_id = fields.Many2one('sale.order', string='Order Reference', required=True, ondelete='cascade', index=True)
@@ -480,14 +483,14 @@ class SaleOrderLine(models.Model):
         required=True, default=1.0)
     product_uom = fields.Many2one('product.uom', string='Unit of Measure ', required=True)
 
-    qty_delivered_manual = fields.Float(string='Delivered Qty', digits_compute= dp.get_precision('Product UoS'),
+    qty_delivered_manual = fields.Float(string='Delivered Manual', digits_compute= dp.get_precision('Product UoS'),
             help="Delivered quantity for fields where it's set manually", default=0.0)
-    qty_delivered = fields.Float(compute='_get_delivered_qty', string='Delivered Qty',
+    qty_delivered = fields.Float(compute='_get_delivered_qty', string='Delivered',
             digits_compute=dp.get_precision('Product UoS'), default=0.0, store=True)
     qty_to_invoice = fields.Float(
-        compute='_get_to_invoice_qty', string='Qty To Invoice', store=True, readonly=True,
+        compute='_get_to_invoice_qty', string='To Invoice', store=True, readonly=True,
         digits_compute=dp.get_precision('Product UoS'), default=0.0)
-    qty_invoiced = fields.Float(compute='_get_invoice_qty', string='Invoiced Qty', store=True, readonly=True,
+    qty_invoiced = fields.Float(compute='_get_invoice_qty', string='Invoiced', store=True, readonly=True,
         digits_compute=dp.get_precision('Product UoS'), default=0.0)
 
     salesman_id=fields.Many2one(related='order_id.user_id', store=True, string='Salesperson', readonly=True)
