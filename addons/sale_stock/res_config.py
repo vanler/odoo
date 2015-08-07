@@ -18,10 +18,6 @@ class sale_configuration(osv.osv_memory):
                  'the Timesheet line entries for particular date and particular user  with the effect of creating, editing and deleting either ways '
                  'and to automatically creates project tasks from procurement lines.\n'
                  '-This installs the modules project_timesheet and sale_service.'),
-        'default_order_policy': fields.selection(
-            [('manual', 'Create invoice on sales order'), ('picking', 'Create invoice on deliveries')],
-            'The default invoicing method is', default_model='sale.order',
-            help="You can generate invoices based on sales orders or based on shippings."),
         'module_delivery': fields.boolean('Allow adding shipping costs',
             help='Allows you to add delivery methods in sales orders and delivery orders.\n'
                  'You can define your own carrier and delivery grids for prices.\n'
@@ -38,9 +34,6 @@ class sale_configuration(osv.osv_memory):
             help="Allows you to choose a delivery route on sales order lines"),
     }
 
-    _defaults = {
-        'default_order_policy': 'manual',
-    }
 
     def default_get(self, cr, uid, fields, context=None):
         res = super(sale_configuration, self).default_get(cr, uid, fields, context)

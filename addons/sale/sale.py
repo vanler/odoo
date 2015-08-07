@@ -106,7 +106,7 @@ class SaleOrder(models.Model):
         ('delivery', 'Delivered Quantities'),
     ], string='Invoice Policy', default='order')
     invoice_count = fields.Integer(string='# of Invoices', compute='_get_invoiced', store=True, readonly=True)
-    invoice_ids = fields.Many2many("account.invoice", string='Invoices', compute="_get_invoiced", store=True, readonly=True)
+    invoice_ids = fields.Many2many("account.invoice", string='Invoices', compute="_get_invoiced", readonly=True)
     invoice_status = fields.Selection([
             ('upselling', 'Upselling Opportunity'),
             ('invoiced', 'Fully Invoiced'),
@@ -248,26 +248,30 @@ class SaleOrder(models.Model):
                 order.state = 'sent'
         return self.env['report'].get_action([order.id for order in self], 'sale.report_saleorder')
 
-    # TODO: this probably crashes
     @api.multi
     def action_view_invoice(self):
         self.ensure_one()
-        act_obj = self.env['ir.actions.act_window']
-        result = self.env.ref('account.action_invoice_tree1')
+        action = self.env.ref('account.action_invoice_tree1')
+        form = self.env.ref('account.action_invoice_tree1_view2', False)
+        tree = self.env.ref('account.action_invoice_tree1_view1', False)
 
-        result = act_obj.read([result.id])[0]
-
-        #compute the number of invoices to display
         inv_ids = []
         for so in self:
             inv_ids += [invoice.id for invoice in so.invoice_ids]
-        #choose the view_mode accordingly
-        if len(inv_ids)>1:
-            result['domain'] = "[('id','in',["+','.join(map(str, inv_ids))+"])]"
-        else:
-            res = mod_obj.get_object_reference(cr, uid, 'account', 'invoice_form')
-            result['views'] = [(res and res[1] or False, 'form')]
-            result['res_id'] = inv_ids and inv_ids[0] or False
+        result = {
+            'name': action.name,
+            'help': action.help,
+            'type': action.type,
+            'view_type': action.view_type,
+            'view_mode': action.view_mode,
+            'target': action.target,
+            'context': action.context,
+            'res_model': action.res_model,
+            'views': [(tree.id, 'tree'), (form.id, 'form')],
+            'search_view_id': action.search_view_id and action.search_view_id.id or False,
+            'domain': "[('id','in',["+','.join(map(str, inv_ids))+"])]",
+            'res_id': (len(inv_ids)==1) and inv_ids[0] or False,
+        }
         return result
 
     @api.multi
@@ -285,10 +289,16 @@ class SaleOrder(models.Model):
                 if group_key not in invoices:
                     inv_data = order._prepare_invoice()
                     invoice = inv_obj.create(inv_data)
-                    invoices[group_key] = invoice.id
-                line.invoice_line_create(invoices[group_key], qty)
+                    invoices[group_key] = invoice
+                line.invoice_line_create(invoices[group_key].id, qty)
                 number += 1
-        return invoices.values()
+        for invoice in invoices.values():
+            # If invoice is negative, do a refund invoice instead
+            if invoice.amount_untaxed < 0:
+                for line in invoice.lines:
+                    line.quantity = -line.quantity
+                    invoice.type='out_refund'
+        return map(lambda x: x.id, invoices.values())
 
     @api.one
     def action_draft(self):
@@ -425,9 +435,21 @@ class SaleOrderLine(models.Model):
         self.price_subtotal = taxes['total_excluded']
 
     @api.one
+    @api.depends('product_id', 'order_id.state')
+    def _get_delivered_updateable(self):
+        self.qty_delivered_updateable = True
+
+    @api.one
     @api.depends('qty_delivered_manual')
     def _get_delivered_qty(self):
-        self.qty_delivered = self.qty_delivered_manual
+        if self.qty_delivered_updateable:
+            self.qty_delivered = self.qty_delivered_manual
+        else:
+            self.qty_delivered = 0
+
+    @api.one
+    def _set_delivered_qty(self):
+        self.qty_delivered_manual = self.qty_delivered
 
     @api.one
     @api.depends('order_id.invoice_policy', 'qty_invoiced', 'qty_delivered', 'product_uom_qty')
@@ -479,24 +501,34 @@ class SaleOrderLine(models.Model):
         default=0.0)
 
     product_id = fields.Many2one('product.product', string='Product', domain=[('sale_ok', '=', True)], change_default=True, ondelete='restrict', required=True)
-    product_uom_qty = fields.Float(string='Quantity', digits_compute= dp.get_precision('Product UoS'),
+    product_uom_qty = fields.Float(string='Quantity', digits_compute= dp.get_precision('Product UoM'),
         required=True, default=1.0)
     product_uom = fields.Many2one('product.uom', string='Unit of Measure ', required=True)
 
-    qty_delivered_manual = fields.Float(string='Delivered Manual', digits_compute= dp.get_precision('Product UoS'),
+    qty_delivered_manual = fields.Float(string='Delivered Manual', digits_compute= dp.get_precision('Product UoM'),
             help="Delivered quantity for fields where it's set manually", default=0.0)
+    qty_delivered_updateable = fields.Boolean(compute='_get_delivered_updateable', string='Can Edit Delivered', readonly=True, default=True)
     qty_delivered = fields.Float(compute='_get_delivered_qty', string='Delivered',
-            digits_compute=dp.get_precision('Product UoS'), default=0.0, store=True)
+            inverse='_set_delivered_qty', readonly=False,
+            digits_compute=dp.get_precision('Product UoM'), default=0.0, store=True)
     qty_to_invoice = fields.Float(
         compute='_get_to_invoice_qty', string='To Invoice', store=True, readonly=True,
-        digits_compute=dp.get_precision('Product UoS'), default=0.0)
+        digits_compute=dp.get_precision('Product UoM'), default=0.0)
     qty_invoiced = fields.Float(compute='_get_invoice_qty', string='Invoiced', store=True, readonly=True,
-        digits_compute=dp.get_precision('Product UoS'), default=0.0)
+        digits_compute=dp.get_precision('Product UoM'), default=0.0)
 
     salesman_id=fields.Many2one(related='order_id.user_id', store=True, string='Salesperson', readonly=True)
     currency_id=fields.Many2one(related='order_id.currency_id', store=True, string='Currency', readonly=True)
     company_id= fields.Many2one(related='order_id.company_id', string='Company', store=True, readonly=True)
     order_partner_id= fields.Many2one(related='order_id.partner_id', store=True, string='Customer')
+
+    state = fields.Selection([
+            ('draft', 'Quotation'),
+            ('sent', 'Quotation Sent'),
+            ('sale', 'Sale Order'),
+            ('done', 'Done'),
+            ('cancel', 'Cancelled'),
+        ], related='order_id.state', string='Order Status', readonly=True, copy=False, store=True, default='draft')
 
     customer_lead= fields.Float('Delivery Lead Time', required=True, default=0.0,
         help="Number of days between the order confirmation and the shipping of the products to the customer")
@@ -533,7 +565,7 @@ class SaleOrderLine(models.Model):
             'price_unit': self.price_unit,
             'quantity': qty,
             'discount': self.discount,
-            'uos_id': self.product_uom.id,
+            'uom_id': self.product_uom.id,
             'product_id': self.product_id.id or False,
             'invoice_line_tax_ids': self.tax_id,
             'account_analytic_id': self.order_id.project_id.id,
@@ -573,6 +605,7 @@ class SaleOrderLine(models.Model):
             name += '\n'+product.description_sale
         self.name = name
 
+        self.customer_lead = self.product_id.sale_delay
         if self.order_id.pricelist_id and self.order_id.partner_id:
             self.price_unit = product.price
         return {'domain': domain}
@@ -653,7 +686,7 @@ class ProductProduct(models.Model):
         r = {}
         domain = [
             ('state', 'in', ['confirmed', 'done']),
-            ('product_id', 'in', ids),
+            ('product_id', 'in', map(lambda x: x.id, self)),
         ]
         for group in self.env['sale.report'].read_group(domain, ['product_id', 'product_uom_qty'], ['product_id']):
             r[group['product_id'][0]] = group['product_uom_qty']

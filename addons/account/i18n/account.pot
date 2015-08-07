@@ -10355,7 +10355,7 @@ msgstr ""
 
 #. module: account
 #: field:account.analytic.line,product_uom_id:0
-#: field:account.invoice.line,uos_id:0
+#: field:account.invoice.line,uom_id:0
 #: field:account.move.line,product_uom_id:0
 msgid "Unit of Measure"
 msgstr ""

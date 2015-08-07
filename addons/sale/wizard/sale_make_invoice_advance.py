@@ -96,7 +96,7 @@ class SaleAdvancePaymentInv(models.TransientModel):
                 'price_unit': amount,
                 'quantity': 1.0,
                 'discount': 0.0,
-                'uos_id': self.product_id.uom_id.id,
+                'uom_id': self.product_id.uom_id.id,
                 'product_id': self.product_id.id,
                 'sale_line_ids': [(6, 0, [so_line.id])],
                 'invoice_line_tax_ids': [(6, 0, map(lambda x: x.id, self.product_id.taxes_id))],

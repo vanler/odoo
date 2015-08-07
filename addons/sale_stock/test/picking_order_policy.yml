@@ -13,7 +13,6 @@
     user_id: base.user_root
     pricelist_id: product.list0
     warehouse_id: stock.warehouse0
-    order_policy: picking
 -
   Add SO line with service type product in SO to check flow which contain service type product in SO(BUG#1167330).
 -
@@ -106,7 +105,6 @@
       assert picking.move_type == sale_order.picking_policy,"Delivery Method is not corresponding with delivery method of sale order."
       assert picking.partner_id.id == sale_order.partner_shipping_id.id,"Shipping Address is not correspond with sale order."
       assert picking.note == sale_order.note,"Note is not correspond with sale order."
-      assert picking.invoice_state == (sale_order.order_policy=='picking' and '2binvoiced') or 'none',"Invoice policy is not correspond with sale order."
       assert len(picking.move_lines) == len(sale_order.order_line) - 1, "Total move of delivery order are not corresposning with total sale order lines."
       location_id = sale_order.warehouse_id.lot_stock_id.id
       for move in picking.move_lines:
@@ -117,8 +115,6 @@
          assert move.product_id.id == order_line.product_id.id,"Product is not correspond."
          assert move.product_qty == order_line.product_uom_qty,"Product Quantity is not correspond."
          assert move.product_uom.id == order_line.product_uom.id,"Product UOM is not correspond."
-         assert move.product_uos_qty == (order_line.product_uos and order_line.product_uos_qty or order_line.product_uom_qty), "Product UOS Quantity is not correspond."
-         assert move.product_uos.id == (order_line.product_uos and order_line.product_uos.id or order_line.product_uom.id), "Product UOS is not correspond"
          assert move.product_packaging.id == order_line.product_packaging.id,"Product packaging is not correspond."
          #assert move.location_id.id == location_id,"Source Location is not correspond."
 -
@@ -176,9 +172,7 @@
         ac = so_line.product_id.property_account_income_id.id or so_line.product_id.categ_id.property_account_income_categ_id.id
         assert inv_line.product_id.id == so_line.product_id.id or False,"Product is not correspond"
         assert inv_line.account_id.id == ac,"Account of Invoice line is not corresponding."
-        assert inv_line.uos_id.id == (so_line.product_uos and so_line.product_uos.id or so_line.product_uom.id), "Product UOS is not correspond."
         assert float_compare(inv_line.price_unit, so_line.price_unit , precision_digits=2) == 0, "Price Unit is not correspond."
-        assert inv_line.quantity == (so_line.product_uos and so_line.product_uos_qty or so_line.product_uom_qty), "Product qty is not correspond."
         assert inv_line.price_subtotal == so_line.price_subtotal, "Price sub total is not correspond."
 -
   Only Stock manager can open the Invoice therefore test with that user which have stock manager rights,

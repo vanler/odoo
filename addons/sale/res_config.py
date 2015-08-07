@@ -65,6 +65,13 @@ Example: 10% for retailers, promotion of 5 EUR on this product, etc."""),
         'group_sale_delivery_address': fields.boolean("Allow a different address for delivery and invoicing ",
             implied_group='sale.group_delivery_invoice_address',
             help="Allows you to specify different delivery and invoice addresses on a sales order."),
+        'default_invoice_policy': fields.selection(
+            [('order', 'Invoice ordered quantities'), ('delivery', 'Invoice delivered quantities')],
+            'Default Invoicing', default_model='sale.order')
+    }
+
+    _defaults = {
+        'default_invoice_policy': 'order',
     }
 
     def set_sale_defaults(self, cr, uid, ids, context=None):

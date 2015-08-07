@@ -14,7 +14,6 @@
         product_uom_qty: 100.0
         state: draft
         product_id: product.product_product_24
-        product_uos_qty: 100.0
         th_weight: 0.0
     order_policy: manual
     partner_id: base.res_partner_4

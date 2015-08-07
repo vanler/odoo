@@ -9,7 +9,6 @@
 -
   !record {model: sale.order, id: sale_order_prepaid1}:
     partner_id: base.res_partner_2
-    order_policy: prepaid
     order_line:
       - product_id: sale_stock.product_prepaid1
         product_uom_qty: 10

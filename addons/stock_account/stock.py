@@ -118,12 +118,11 @@ class stock_move(osv.osv):
         fiscal_position = partner.property_account_position_id
         account_id = fp_obj.map_account(cr, uid, fiscal_position, account_id)
 
-        # set UoS if it's a sale and the picking doesn't have one
-        uos_id = move.product_uom.id
+        uom_id = move.product_uom.id
         quantity = move.product_uom_qty
-        if move.product_uos:
-            uos_id = move.product_uos.id
-            quantity = move.product_uos_qty
+        if move.product_uom:
+            uom_id = move.product_uom.id
+            quantity = move.product_uom_qty
 
         taxes_ids = self._get_taxes(cr, uid, move, context=context)
 
@@ -131,7 +130,7 @@ class stock_move(osv.osv):
             'name': move.name,
             'account_id': account_id,
             'product_id': move.product_id.id,
-            'uos_id': uos_id,
+            'uom_id': uom_id,
             'quantity': quantity,
             'price_unit': self._get_price_unit_invoice(cr, uid, move, inv_type),
             'invoice_line_tax_ids': [(6, 0, taxes_ids)],
@@ -315,9 +314,9 @@ class stock_picking(osv.osv):
             for move in moves_key:
                 line_vals = move_obj._get_invoice_line_vals(cr, uid, move, partner, inv_type, context=context)
                 if not is_extra_move[move.id]:
-                    product_price_unit[line_vals['product_id'], line_vals['uos_id']] = line_vals['price_unit']
-                if is_extra_move[move.id] and (line_vals['product_id'], line_vals['uos_id']) in product_price_unit:
-                    line_vals['price_unit'] = product_price_unit[line_vals['product_id'], line_vals['uos_id']]
+                    product_price_unit[line_vals['product_id'], line_vals['uom_id']] = line_vals['price_unit']
+                if is_extra_move[move.id] and (line_vals['product_id'], line_vals['uom_id']) in product_price_unit:
+                    line_vals['price_unit'] = product_price_unit[line_vals['product_id'], line_vals['uom_id']]
                 if is_extra_move[move.id]:
                     desc = (inv_type in ('out_invoice', 'out_refund') and move.product_id.product_tmpl_id.description_sale) or \
                         (inv_type in ('in_invoice','in_refund') and move.product_id.product_tmpl_id.description_purchase)

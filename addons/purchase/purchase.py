@@ -592,7 +592,7 @@ class purchase_order(osv.osv):
             'price_unit': order_line.price_unit or 0.0,
             'quantity': order_line.product_qty,
             'product_id': order_line.product_id.id or False,
-            'uos_id': order_line.product_uom.id or False,
+            'uom_id': order_line.product_uom.id or False,
             'invoice_line_tax_ids': [(6, 0, [x.id for x in order_line.taxes_id])],
             'account_analytic_id': order_line.account_analytic_id.id or False,
             'purchase_line_id': order_line.id,
@@ -753,7 +753,6 @@ class purchase_order(osv.osv):
             'name': order_line.name or '',
             'product_id': order_line.product_id.id,
             'product_uom': order_line.product_uom.id,
-            'product_uos': order_line.product_uom.id,
             'date': order.date_order,
             'date_expected': order_line.date_planned,
             'location_id': order.partner_id.property_stock_supplier.id,
@@ -780,7 +779,6 @@ class purchase_order(osv.osv):
             tmp = move_template.copy()
             tmp.update({
                 'product_uom_qty': min(procurement_qty, diff_quantity),
-                'product_uos_qty': min(procurement_qty, diff_quantity),
                 'move_dest_id': procurement.move_dest_id.id,  #move destination is same as procurement destination
                 'procurement_id': procurement.id,
                 'invoice_state': procurement.rule_id.invoice_state or (procurement.location_id and procurement.location_id.usage == 'customer' and procurement.invoice_state=='2binvoiced' and '2binvoiced') or (order.invoice_method == 'picking' and '2binvoiced') or 'none', #dropship case takes from sale
@@ -792,7 +790,6 @@ class purchase_order(osv.osv):
         #split the future stock move in two because the route followed may be different.
         if float_compare(diff_quantity, 0.0, precision_rounding=order_line.product_uom.rounding) > 0:
             move_template['product_uom_qty'] = diff_quantity
-            move_template['product_uos_qty'] = diff_quantity
             res.append(move_template)
         return res
 
@@ -1819,8 +1816,8 @@ class account_invoice_line(osv.Model):
                 # calculate and write down the possible price difference between invoice price and product price
                 for line in res:
                     if line.get('invl_id', 0) == i_line.id and a == line['account_id']:
-                        uom = i_line.product_id.uos_id or i_line.product_id.uom_id
-                        valuation_price_unit = self.pool.get('product.uom')._compute_price(cr, uid, uom.id, i_line.product_id.standard_price, i_line.uos_id.id)
+                        uom = i_line.product_id.uom_id
+                        valuation_price_unit = self.pool.get('product.uom')._compute_price(cr, uid, uom.id, i_line.product_id.standard_price, i_line.uom_id.id)
                         if i_line.product_id.cost_method != 'standard' and i_line.purchase_line_id:
                             #for average/fifo/lifo costing method, fetch real cost price from incomming moves
                             stock_move_obj = self.pool.get('stock.move')
@@ -1844,7 +1841,7 @@ class account_invoice_line(osv.Model):
                                 'price': price_diff,
                                 'account_id': acc,
                                 'product_id': line['product_id'],
-                                'uos_id': line['uos_id'],
+                                'uom_id': line['uom_id'],
                                 'account_analytic_id': line['account_analytic_id'],
                                 'taxes': line.get('taxes', []),
                                 })

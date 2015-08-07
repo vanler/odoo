@@ -167,7 +167,7 @@ class account_analytic_line(osv.osv):
             'discount': factor.factor,
             'invoice_id': invoice_id,
             'name': factor_name,
-            'uos_id': uom,
+            'uom_id': uom,
             'account_analytic_id': account.id,
         }
 

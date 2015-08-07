@@ -18,7 +18,6 @@
       - name: 'Ipod'
         product_id: product.product_product_11
         product_uom_qty: 2
-        product_uos_qty: 2
         product_uom: product.product_uom_unit
         price_unit: 750.00
     carrier_id: normal_delivery_carrier

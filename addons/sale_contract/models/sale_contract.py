@@ -694,7 +694,7 @@ class account_analytic_account(osv.osv):
             'price_unit': line.price_unit or 0.0,
             'discount': line.discount,
             'quantity': line.quantity,
-            'uos_id': line.uom_id.id or False,
+            'uom_id': line.uom_id.id or False,
             'product_id': line.product_id.id or False,
             'invoice_line_tax_ids': [(6, 0, tax_id)],
         }

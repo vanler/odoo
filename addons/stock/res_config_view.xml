@@ -81,10 +81,6 @@
                                 <field name="group_uom" class="oe_inline"/>
                                 <label for="group_uom"/>
                             </div>
-                            <div>
-                                <field name="group_uos" class="oe_inline"/>
-                                <label for="group_uos" />
-                            </div>
                         </div>
                     </group>
                     <group>

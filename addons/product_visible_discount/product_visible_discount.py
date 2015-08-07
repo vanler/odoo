@@ -45,11 +45,11 @@ class sale_order_line(osv.osv):
         return product[field_name] * factor, currency_id
 
     def product_id_change(self, cr, uid, ids, pricelist, product, qty=0,
-            uom=False, qty_uos=0, uos=False, name='', partner_id=False,
+            uom=False, name='', partner_id=False,
             lang=False, update_tax=True, date_order=False, packaging=False,
             fiscal_position_id=False, flag=False, context=None):
         res=super(sale_order_line, self).product_id_change(cr, uid, ids, pricelist, product, qty,
-            uom, qty_uos, uos, name, partner_id,
+            uom, name, partner_id,
             lang, update_tax, date_order, packaging=packaging, fiscal_position_id=fiscal_position_id, flag=flag, context=context)
 
         if context is None:

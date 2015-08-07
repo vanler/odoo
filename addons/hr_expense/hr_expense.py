@@ -199,7 +199,7 @@ class hr_expense_expense(osv.osv):
             'ref': x.get('ref', False),
             'quantity': x.get('quantity',1.00),
             'product_id': x.get('product_id', False),
-            'product_uom_id': x.get('uos_id', False),
+            'product_uom_id': x.get('uom_id', False),
             'analytic_account_id': x.get('account_analytic_id', False),
         }
 
@@ -342,7 +342,7 @@ class hr_expense_expense(osv.osv):
             'price':line.total_amount,
             'account_id':acc.id,
             'product_id':line.product_id.id,
-            'uos_id':line.uom_id.id,
+            'uom_id':line.uom_id.id,
             'account_analytic_id':line.analytic_account.id,
         }
 

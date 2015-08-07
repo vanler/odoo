@@ -53,8 +53,6 @@ class StockMove(osv.osv):
                         'product_id': line['product_id'],
                         'product_uom': line['product_uom'],
                         'product_uom_qty': line['product_qty'],
-                        'product_uos': line['product_uos'],
-                        'product_uos_qty': line['product_uos_qty'],
                         'state': 'draft',  #will be confirmed below
                         'name': line['name'],
                         'procurement_id': move.procurement_id.id,
@@ -72,8 +70,6 @@ class StockMove(osv.osv):
                             'product_id': line['product_id'],
                             'product_qty': line['product_qty'],
                             'product_uom': line['product_uom'],
-                            'product_uos_qty': line['product_uos_qty'],
-                            'product_uos': line['product_uos'],
                             'group_id': move.group_id.id,
                             'priority': move.priority,
                             'partner_dest_id': move.partner_id.id,

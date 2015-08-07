@@ -13,7 +13,6 @@
       - name: 'PC Assamble + 2GB RAM'
         product_id: product.product_product_4
         product_uom_qty: 1
-        product_uos_qty: 1
         product_uom: product.product_uom_unit
         price_unit: 750.00
     carrier_id: normal_delivery_carrier
@@ -59,14 +58,12 @@
       - name: 'Service on demand'
         product_id: product.product_product_1
         product_uom_qty: 24
-        product_uos_qty: 24
         product_uom: product.product_uom_hour
         price_unit: 75.00
     order_line:
       - name: 'On Site Assistance'
         product_id: product.product_product_2
         product_uom_qty: 30
-        product_uos_qty: 30
         product_uom: product.product_uom_hour
         price_unit: 38.25
     carrier_id: free_delivery_carrier

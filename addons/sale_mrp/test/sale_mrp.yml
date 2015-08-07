@@ -75,7 +75,6 @@
         state: draft
         delay: 7.0
         product_id: product_product_slidermobile0
-        product_uos_qty: 500.0
     order_policy: manual
     partner_id: base.res_partner_4
     partner_invoice_id: base.res_partner_address_7

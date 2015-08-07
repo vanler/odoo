@@ -386,7 +386,7 @@ class account_invoice(osv.osv):
                         'product_id': il['product_id'],
                         'account_id': line2.analytic_account_id.id,
                         'amount': amt,
-                        'product_uom_id': il['uos_id'],
+                        'product_uom_id': il['uom_id'],
                         'general_account_id': il['account_id'],
                         'journal_id': self._get_journal_analytic(cr, uid, inv.type),
                         'ref': ref,

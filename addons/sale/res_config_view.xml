@@ -16,6 +16,10 @@
                                 <label for="timesheet"/>
                             </div>
                         </div>
+                        <label for="default_invoice_policy"/>
+                        <div>
+                            <field name="default_invoice_policy" class="oe_inline"/>
+                        </div>
                     </group>
                     <group name='default_options' invisible="1">
                         <label for="id" string="Default Options"/>

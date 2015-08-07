@@ -319,9 +319,7 @@ class mrp_bom(osv.osv):
                     'name': bom_line_id.product_id.name,
                     'product_id': bom_line_id.product_id.id,
                     'product_qty': quantity,
-                    'product_uom': bom_line_id.product_uom.id,
-                    'product_uos_qty': bom_line_id.product_uos and _factor(bom_line_id.product_uos_qty * factor, bom_line_id.product_efficiency, bom_line_id.product_rounding) or False,
-                    'product_uos': bom_line_id.product_uos and bom_line_id.product_uos.id or False,
+                    'product_uom': bom_line_id.product_uom.id
                 })
             elif bom_id:
                 all_prod = [bom.product_tmpl_id.id] + (previous_products or [])
@@ -401,8 +399,6 @@ class mrp_bom_line(osv.osv):
                      "it will be directly replaced by the raw materials of its own BoM, without triggering"
                      "an extra manufacturing order."),
         'product_id': fields.many2one('product.product', 'Product', required=True),
-        'product_uos_qty': fields.float('Product UOS Qty'),
-        'product_uos': fields.many2one('product.uom', 'Product UOS', help="Product UOS (Unit of Sale) is the unit of measurement for the invoicing and promotion of stock."),
         'product_qty': fields.float('Product Quantity', required=True, digits_compute=dp.get_precision('Product Unit of Measure')),
         'product_uom': fields.many2one('product.uom', 'Product Unit of Measure', required=True,
             help="Unit of Measure (Unit of Measure) is the unit of measurement for the inventory control"),
@@ -464,12 +460,7 @@ class mrp_bom_line(osv.osv):
             prod = self.pool.get('product.product').browse(cr, uid, product_id, context=context)
             res['value'] = {
                 'product_uom': prod.uom_id.id,
-                'product_uos_qty': 0,
-                'product_uos': False
             }
-            if prod.uos_id.id:
-                res['value']['product_uos_qty'] = product_qty * prod.uos_coeff
-                res['value']['product_uos'] = prod.uos_id.id
         return res
 
 class mrp_production(osv.osv):
@@ -563,8 +554,6 @@ class mrp_production(osv.osv):
                                       domain=[('type','!=','service')]),
         'product_qty': fields.float('Product Quantity', digits_compute=dp.get_precision('Product Unit of Measure'), required=True, readonly=True, states={'draft': [('readonly', False)]}),
         'product_uom': fields.many2one('product.uom', 'Product Unit of Measure', required=True, readonly=True, states={'draft': [('readonly', False)]}),
-        'product_uos_qty': fields.float('Product UoS Quantity', readonly=True, states={'draft': [('readonly', False)]}),
-        'product_uos': fields.many2one('product.uom', 'Product UoS', readonly=True, states={'draft': [('readonly', False)]}),
         'progress': fields.function(_get_progress, type='float',
             string='Production progress'),
 
@@ -689,8 +678,6 @@ class mrp_production(osv.osv):
                 'product_uom': False,
                 'bom_id': False,
                 'routing_id': False,
-                'product_uos_qty': 0,
-                'product_uos': False,
                 'product_tmpl_id': False
             }}
         bom_obj = self.pool.get('mrp.bom')
@@ -701,10 +688,7 @@ class mrp_production(osv.osv):
             bom_point = bom_obj.browse(cr, uid, bom_id, context=context)
             routing_id = bom_point.routing_id.id or False
         product_uom_id = product.uom_id and product.uom_id.id or False
-        result['value'] = {'product_uos_qty': 0, 'product_uos': False, 'product_uom': product_uom_id, 'bom_id': bom_id, 'routing_id': routing_id, 'product_tmpl_id': product.product_tmpl_id}
-        if product.uos_id.id:
-            result['value']['product_uos_qty'] = product_qty * product.uos_coeff
-            result['value']['product_uos'] = product.uos_id.id
+        result['value'] = {'product_uom': product_uom_id, 'bom_id': bom_id, 'routing_id': routing_id, 'product_tmpl_id': product.product_tmpl_id}
         return result
 
     def bom_id_change(self, cr, uid, ids, bom_id, context=None):
@@ -1129,8 +1113,6 @@ class mrp_production(osv.osv):
             'product_id': production.product_id.id,
             'product_uom': production.product_uom.id,
             'product_uom_qty': production.product_qty,
-            'product_uos_qty': production.product_uos and production.product_uos_qty or False,
-            'product_uos': production.product_uos and production.product_uos.id or False,
             'location_id': source_location_id,
             'location_dest_id': destination_location_id,
             'move_dest_id': production.move_prod_id.id,
@@ -1205,7 +1187,7 @@ class mrp_production(osv.osv):
         }, context=context)
         return move
 
-    def _make_consume_line_from_data(self, cr, uid, production, product, uom_id, qty, uos_id, uos_qty, context=None):
+    def _make_consume_line_from_data(self, cr, uid, production, product, uom_id, qty, context=None):
         stock_move = self.pool.get('stock.move')
         loc_obj = self.pool.get('stock.location')
         # Internal shipment is created for Stockable and Consumer Products
@@ -1226,8 +1208,6 @@ class mrp_production(osv.osv):
             'product_id': product.id,
             'product_uom_qty': qty,
             'product_uom': uom_id,
-            'product_uos_qty': uos_id and uos_qty or False,
-            'product_uos': uos_id or False,
             'location_id': source_location_id,
             'location_dest_id': destination_location_id,
             'company_id': production.company_id.id,
@@ -1247,7 +1227,7 @@ class mrp_production(osv.osv):
         return move_id
 
     def _make_production_consume_line(self, cr, uid, line, context=None):
-        return self._make_consume_line_from_data(cr, uid, line.production_id, line.product_id, line.product_uom.id, line.product_qty, line.product_uos.id, line.product_uos_qty, context=context)
+        return self._make_consume_line_from_data(cr, uid, line.production_id, line.product_id, line.product_uom.id, line.product_qty, context=context)
 
 
     def _make_service_procurement(self, cr, uid, line, context=None):
@@ -1261,8 +1241,6 @@ class mrp_production(osv.osv):
                 'product_id': line.product_id.id,
                 'product_qty': line.product_qty,
                 'product_uom': line.product_uom.id,
-                'product_uos_qty': line.product_uos_qty,
-                'product_uos': line.product_uos.id,
                 }
             proc_obj = self.pool.get("procurement.order")
             proc = proc_obj.create(cr, uid, vals, context=context)
@@ -1347,7 +1325,5 @@ class mrp_production_product_line(osv.osv):
         'product_id': fields.many2one('product.product', 'Product', required=True),
         'product_qty': fields.float('Product Quantity', digits_compute=dp.get_precision('Product Unit of Measure'), required=True),
         'product_uom': fields.many2one('product.uom', 'Product Unit of Measure', required=True),
-        'product_uos_qty': fields.float('Product UOS Quantity'),
-        'product_uos': fields.many2one('product.uom', 'Product UOS'),
         'production_id': fields.many2one('mrp.production', 'Production Order', select=True),
     }
