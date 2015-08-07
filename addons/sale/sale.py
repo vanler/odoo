@@ -503,7 +503,7 @@ class SaleOrderLine(models.Model):
     product_id = fields.Many2one('product.product', string='Product', domain=[('sale_ok', '=', True)], change_default=True, ondelete='restrict', required=True)
     product_uom_qty = fields.Float(string='Quantity', digits_compute= dp.get_precision('Product UoM'),
         required=True, default=1.0)
-    product_uom = fields.Many2one('product.uom', string='Unit of Measure ', required=True)
+    product_uom = fields.Many2one('product.uom', string='Unit of Measure', required=True)
 
     qty_delivered_manual = fields.Float(string='Delivered Manual', digits_compute= dp.get_precision('Product UoM'),
             help="Delivered quantity for fields where it's set manually", default=0.0)
