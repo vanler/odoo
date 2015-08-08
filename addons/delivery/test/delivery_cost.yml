@@ -36,16 +36,6 @@
 -
   !workflow {model: sale.order, action: order_confirm, ref: sale_normal_delivery_charges}
 -
-  I create Invoice from shipment.
--
-  !python {model: stock.invoice.onshipping}: |
-    sale = self.pool.get('sale.order')
-    sale_order = sale.browse(cr, uid, ref("sale_normal_delivery_charges"))
-    ship_ids = [x.id for x in sale_order.picking_ids]
-    wiz_id = self.create(cr, uid, {'journal_id': ref('sales_journal')},
-      {'active_ids': ship_ids, 'active_model': 'stock.picking'})
-    self.create_invoice(cr, uid, [wiz_id], {"active_ids": ship_ids, "active_id": ship_ids[0]})
--
   Create one more sale order with Free Delivery Charges
 -
   !record {model: sale.order, id: sale_free_delivery_charges}:
