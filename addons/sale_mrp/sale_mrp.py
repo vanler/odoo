@@ -56,22 +56,15 @@ class mrp_production(osv.osv):
     }
 
 
-class sale_order(osv.Model):
-    _inherit = 'sale.order'
-
-    def _prepare_order_line_procurement(self, cr, uid, order, line, group_id=False, context=None):
-        result = super(sale_order, self)._prepare_order_line_procurement(cr, uid, order, line, group_id=group_id, context=context)
-        result['property_ids'] = [(6, 0, [x.id for x in line.property_ids])]
-        return result
-
-
 class sale_order_line(osv.osv):
-
     _inherit = 'sale.order.line'
     _columns = {
         'property_ids': fields.many2many('mrp.property', 'sale_order_line_property_rel', 'order_id', 'property_id', 'Properties', readonly=True, states={'draft': [('readonly', False)]}),
     }
-    
+    def _prepare_order_line_procurement(self, cr, uid, order, line, group_id=False, context=None):
+        result = super(sale_order_line, self)._prepare_order_line_procurement(cr, uid, line, group_id=group_id, context=context)
+        result['property_ids'] = [(6, 0, [x.id for x in line.property_ids])]
+        return result
 
 class stock_move(osv.osv):
     _inherit = 'stock.move'

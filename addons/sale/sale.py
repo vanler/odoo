@@ -39,9 +39,7 @@ class SaleOrder(models.Model):
     def _get_invoiced(self):
         invoices = set()
         status = 'invoiced'
-        print '*** Status', status
         for line in self.order_line:
-            print line.id, status
             if line.qty_to_invoice:
                 status = 'to invoice'
             elif (line.qty_invoiced < line.product_uom_qty) and (status <> 'to invoice'):
@@ -52,7 +50,6 @@ class SaleOrder(models.Model):
             status='no'
         if self.state == 'done':
             status='invoiced'
-        print 'Status', status
         self.invoice_count = len(invoices)
         self.invoice_ids = map(lambda x: x.id, invoices)
         self.invoice_status = status
@@ -249,7 +246,7 @@ class SaleOrder(models.Model):
         for order in self:
             if order.state == 'draft':
                 order.state = 'sent'
-        return self.env['report'].get_action([order.id for order in self], 'sale.report_saleorder')
+        return self.env['report'].get_action(self, 'sale.report_saleorder')
 
     @api.multi
     def action_view_invoice(self):
@@ -377,51 +374,13 @@ class SaleOrder(models.Model):
         self.state = 'done'
 
     @api.model
-    def _prepare_order_line_procurement(self, line, group_id=False):
-        date_planned = datetime.strptime(self.date_order, DEFAULT_SERVER_DATETIME_FORMAT) + timedelta(days=line.customer_lead or 0.0)
-        return {
-            'name': line.name,
-            'origin': self.name,
-            'date_planned': date_planned,
-            'product_id': line.product_id.id,
-            'product_qty': line.product_uom_qty,
-            'product_uom': line.product_uom.id,
-            'company_id': self.company_id.id,
-            'group_id': group_id,
-            'sale_line_id': line.id
-        }
-
-    @api.model
     def _prepare_procurement_group(self):
         return {'name': self.name}
 
     @api.one
     def action_confirm(self):
         self.state = 'sale'
-        self._action_ship_create()
-
-    @api.one
-    def _action_ship_create(self):
-        if self.state <> 'sale': return
-        proc_ids = []
-        for line in self.order_line:
-            qty = 0.0
-            for proc in line.procurement_ids:
-                qty += product_uom_qty
-            if qty >= line.product_uom_qty:
-                continue
-
-            if not self.procurement_group_id:
-                vals = self._prepare_procurement_group()
-                self.procurement_group_id = self.env["procurement.group"].create(vals)
-
-            vals = self._prepare_order_line_procurement(line, group_id=self.procurement_group_id.id)
-            result = self.env["procurement.order"].create(vals)
-            proc_ids.append( result )
-
-        self.env["procurement.order"].run(proc_ids)
-        return True
-
+        self.order_line._action_procurement_create()
 
 class SaleOrderLine(models.Model):
     _name = 'sale.order.line'
@@ -457,14 +416,11 @@ class SaleOrderLine(models.Model):
     @api.one
     @api.depends('order_id.invoice_policy', 'qty_invoiced', 'qty_delivered', 'product_uom_qty', 'order_id.state')
     def _get_to_invoice_qty(self):
-        print 'Compute QTY yo invoice', self.order_id.state
         if self.order_id.state=='sale':
             if self.order_id.invoice_policy == 'order':
                 self.qty_to_invoice = self.product_uom_qty - self.qty_invoiced
-                print 'Set', self.product_uom_qty - self.qty_invoiced, self.id
             else:
                 self.qty_to_invoice = self.qty_delivered - self.qty_invoiced
-                print 'Set', self.qty_delivered - self.qty_invoiced, self.id
         else:
             self.qty_to_invoice = 0
 
@@ -473,10 +429,8 @@ class SaleOrderLine(models.Model):
     def _get_invoice_qty(self):
         qty_invoiced = 0.0
         for invoice_line in self.invoice_lines:
-            print 'ICI', invoice_line
             if invoice_line.invoice_id.state != 'cancel':
                 qty_invoiced += invoice_line.quantity
-                print '-', qty_invoiced
         self.qty_invoiced = qty_invoiced
 
     @api.one
@@ -487,6 +441,63 @@ class SaleOrderLine(models.Model):
         else:
             self.price_reduce = 0.0
 
+    @api.multi
+    def _prepare_order_line_procurement(self, group_id=False):
+        self.ensure_one()
+        date_planned = datetime.strptime(self.order_id.date_order, DEFAULT_SERVER_DATETIME_FORMAT) + timedelta(days=self.customer_lead or 0.0)
+        return {
+            'name': self.name,
+            'origin': self.order_id.name,
+            'date_planned': date_planned,
+            'product_id': self.product_id.id,
+            'product_qty': self.product_uom_qty,
+            'product_uom': self.product_uom.id,
+            'company_id': self.order_id.company_id.id,
+            'group_id': group_id,
+            'sale_line_id': self.id
+        }
+
+    @api.one
+    def _action_procurement_create(self):
+        print self.state
+        if self.state <> 'sale': return
+        qty = 0.0
+        for proc in self.procurement_ids:
+            qty += proc.product_qty
+        print qty, self.product_uom_qty
+        if qty >= self.product_uom_qty:
+            return False
+
+        if not self.order_id.procurement_group_id:
+            vals = self.order_id._prepare_procurement_group()
+            self.order_id.procurement_group_id = self.env["procurement.group"].create(vals)
+
+        vals = self._prepare_order_line_procurement(group_id=self.order_id.procurement_group_id.id)
+        vals['product_qty'] = self.product_uom_qty - qty
+        print 'Procurement Created', vals
+        result = self.env["procurement.order"].create(vals)
+        self.env["procurement.order"].run([result])
+        return True
+
+    # Create new procurements if quantities purchased changes
+    @api.model
+    def create(self, values):
+        line = super(SaleOrderLine, self).create(values)
+        if line.state=='sale':
+            line._action_procurement_create()
+        return line
+
+    # Create new procurements if quantities purchased changes
+    @api.multi
+    def write(self, values):
+        lines = False
+        if 'product_uom_qty' in values:
+            lines = self.filtered(lambda r: r.state=='sale' and r.product_uom_qty < values['product_uom_qty'])
+            print 'Lines', lines
+        result = super(SaleOrderLine, self).write(values)
+        if lines:
+            lines._action_procurement_create()
+        return result
 
     order_id = fields.Many2one('sale.order', string='Order Reference', required=True, ondelete='cascade', index=True)
     name = fields.Text(string='Description', required=True)
@@ -634,8 +645,8 @@ class SaleOrderLine(models.Model):
 
     @api.multi
     def unlink(self):
-        if self.qty_invoiced or self.qty_delivered:
-            raise UserError(_('Cannot delete a sales order line that is invoiced or delivered.'))
+        if line.filtered(lambda x: x.state in ('sale','done')):
+            raise UserError(_('You can not remove a sale order line.\nDiscard changes and try setting the quantity to 0.'))
         return super(SaleOrderLine, self).unlink()
 
 

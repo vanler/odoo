@@ -12,7 +12,6 @@
 -
   !record {model: product.product, id: product_product_hrmanger0}:
     categ_id: product.product_category_5
-    mes_type: fixed
     name: HR Manager
     standard_price: 1.0
     type: service

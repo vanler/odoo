@@ -34,19 +34,6 @@ class SaleOrder(models.Model):
         self.picking_ids = map(lambda x: x.id, picking_ids)
         self.delivery_count = len(self.picking_ids)
 
-    @api.model
-    def _prepare_order_line_procurement(self, line, group_id=False):
-        vals = super(SaleOrder, self)._prepare_order_line_procurement(line, group_id=group_id)
-        date_planned = vals['date_planned']
-        vals.update({
-            'date_planned': (date_planned - timedelta(days=self.company_id.security_lead)).strftime(DEFAULT_SERVER_DATETIME_FORMAT),
-            'location_id': self.partner_shipping_id.property_stock_customer.id,
-            'route_ids': line.route_id and [(4, line.route_id.id)] or [],
-            'warehouse_id': self.warehouse_id and self.warehouse_id.id or False,
-            'partner_dest_id': self.partner_shipping_id.id
-        })
-        return vals
-
     @api.multi
     def _prepare_invoice(self):
         invoice_vals = super(SaleOrder, self)._prepare_invoice()
@@ -112,6 +99,19 @@ class SaleOrderLine(models.Model):
     product_packaging = fields.Many2one('product.packaging', string='Packaging', default=False)
     route_id = fields.Many2one('stock.location.route', string='Route', domain=[('sale_selectable', '=', True)])
     product_tmpl_id = fields.Many2one('product.template', related='product_id.product_tmpl_id', string='Product Template')
+
+    @api.multi
+    def _prepare_order_line_procurement(self, group_id=False):
+        vals = super(SaleOrderLine, self)._prepare_order_line_procurement(group_id=group_id)
+        date_planned = vals['date_planned']
+        vals.update({
+            'date_planned': (date_planned - timedelta(days=self.order_id.company_id.security_lead)).strftime(DEFAULT_SERVER_DATETIME_FORMAT),
+            'location_id': self.order_id.partner_shipping_id.property_stock_customer.id,
+            'route_ids': self.route_id and [(4, self.route_id.id)] or [],
+            'warehouse_id': self.order_id.warehouse_id and self.order_id.warehouse_id.id or False,
+            'partner_dest_id': self.order_id.partner_shipping_id.id
+        })
+        return vals
 
     @api.one
     @api.depends('product_id', 'order_id.state')
@@ -179,7 +179,7 @@ class SaleOrderLine(models.Model):
                        'title': _('Not anough inventory!'),
                        'message' : _('You plan to sell %.2f %s but you only have %.2f %s available!\nThe stock on hand is %.2f %s.') % \
                            (self.product_uom_qty, self.product_uom.name, product.virtual_available, self.product_uom.name,
-                            product.stock_available, self.product_uom.name)
+                            product.qty_available, self.product_uom.name)
                     }
         return {}
 

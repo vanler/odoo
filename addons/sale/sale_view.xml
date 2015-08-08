@@ -175,7 +175,8 @@
                     </group>
                     <notebook>
                         <page string="Order Lines">
-                            <field name="order_line" mode="tree,kanban">
+                            <field name="order_line" mode="tree,kanban"
+                                attrs="{'readonly': [('state', 'in', ('done','cancel'))]}">
                                 <form string="Sales Order Lines">
                                     <group>
                                         <group>
@@ -220,10 +221,12 @@
                                         context="{'partner_id':parent.partner_id, 'quantity':product_uom_qty, 'pricelist':parent.pricelist_id, 'uom':product_uom}"/>
                                     <field name="qty_delivered" invisible="not context.get('show_sale', False)"
                                         attrs="{'readonly': [('qty_delivered_updateable', '=', False)]}"/>
-                                    <field name="qty_invoiced" invisible="not context.get('show_sale', False)"/>
+                                    <field name="qty_invoiced"
+                                        invisible="not context.get('show_sale', False)"/>
                                     <field name="product_uom"
                                         groups="product.group_uom" options='{"no_open": True}'/>
-                                    <field name="price_unit"/>
+                                    <field name="price_unit"
+                                        attrs="{'readonly': [('qty_invoiced', '&gt;', 0)]}"/>
                                     <field name="tax_id" widget="many2many_tags" domain="[('type_tax_use','=','sale'),('company_id','=',parent.company_id)]"/>
                                     <field name="discount" groups="sale.group_discount_per_so_line"/>
                                     <field name="price_subtotal" widget="monetary"/>
