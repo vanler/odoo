@@ -2058,7 +2058,7 @@ class stock_move(osv.osv):
                                 "new quantity as complete: Odoo will not "
                                 "automatically generate a back order.")})
                 break
-        return {'value': result, 'warning': warning}
+        return {'warning': warning}
 
     def onchange_product_id(self, cr, uid, ids, prod_id=False, loc_id=False, loc_dest_id=False, partner_id=False):
         """ On change of product id, if finds UoM, quantity

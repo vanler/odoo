@@ -35,21 +35,24 @@ class SaleOrder(models.Model):
         self.amount_total = self.amount_untaxed + self.amount_tax
 
     @api.one
-    @api.depends('order_line.qty_to_invoice', 'order_line.product_uom_qty', 'order_line.invoice_lines')
+    @api.depends('order_line.qty_to_invoice', 'order_line.product_uom_qty', 'order_line.invoice_lines', 'state')
     def _get_invoiced(self):
         invoices = set()
         status = 'invoiced'
+        print '*** Status', status
         for line in self.order_line:
+            print line.id, status
             if line.qty_to_invoice:
                 status = 'to invoice'
             elif (line.qty_invoiced < line.product_uom_qty) and (status <> 'to invoice'):
                 status = 'no'
             for il in line.invoice_lines:
                 invoices.add(il.invoice_id)
-        if self.state not in ('progress', 'done'):
+        if self.state not in ('sale', 'done'):
             status='no'
         if self.state == 'done':
             status='invoiced'
+        print 'Status', status
         self.invoice_count = len(invoices)
         self.invoice_ids = map(lambda x: x.id, invoices)
         self.invoice_status = status
@@ -147,7 +150,7 @@ class SaleOrder(models.Model):
     @api.multi
     def _track_subtype(self, init_values):
         self.ensure_one()
-        if 'state' in init_values and self.state in ['progress']:
+        if 'state' in init_values and self.state in ['sale']:
             return 'sale.mt_order_confirmed'
         elif 'state' in init_values and self.state == 'sent':
             return 'sale.mt_order_sent'
@@ -452,13 +455,16 @@ class SaleOrderLine(models.Model):
         self.qty_delivered_manual = self.qty_delivered
 
     @api.one
-    @api.depends('order_id.invoice_policy', 'qty_invoiced', 'qty_delivered', 'product_uom_qty')
+    @api.depends('order_id.invoice_policy', 'qty_invoiced', 'qty_delivered', 'product_uom_qty', 'order_id.state')
     def _get_to_invoice_qty(self):
+        print 'Compute QTY yo invoice', self.order_id.state
         if self.order_id.state=='sale':
             if self.order_id.invoice_policy == 'order':
-                self.qty_to_invoice = self.qty_delivered - self.qty_invoiced
-            else:
                 self.qty_to_invoice = self.product_uom_qty - self.qty_invoiced
+                print 'Set', self.product_uom_qty - self.qty_invoiced, self.id
+            else:
+                self.qty_to_invoice = self.qty_delivered - self.qty_invoiced
+                print 'Set', self.qty_delivered - self.qty_invoiced, self.id
         else:
             self.qty_to_invoice = 0
 

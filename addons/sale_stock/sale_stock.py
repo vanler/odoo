@@ -121,7 +121,7 @@ class SaleOrderLine(models.Model):
         self.qty_delivered_updateable = False
 
     @api.one
-    @api.depends('qty_delivered_manual')
+    @api.depends('procurement_ids.state')
     def _get_delivered_qty(self):
         if self.product_id.type not in ('consu','product'):
             return super(SaleOrderLine, self)._get_delivered_qty()
@@ -170,7 +170,7 @@ class SaleOrderLine(models.Model):
             if float_compare(product.virtual_available, self.product_uom_qty, precision_rounding=self.product_uom.rounding) == -1:
                 # Check if MTO, Cross-Dock or Drop-Shipping
                 is_available = False
-                for route in [self.route_id]+self.product_id.route_ids:
+                for route in self.route_id+self.product_id.route_ids:
                     for pull in route.pull_ids:
                         if pull.location_id.id == self.order_id.warehouse_id.lot_stock_id.id:
                             is_available = True
